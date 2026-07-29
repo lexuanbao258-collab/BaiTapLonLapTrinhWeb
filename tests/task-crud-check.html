@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow task CRUD check</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+      button { padding: .6rem 1rem; cursor: pointer; }
+      pre { padding: 1rem; background: #111827; color: #e5e7eb; white-space: pre-wrap; }
+      .ok { color: #065f46; }
+      .fail { color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>Kiểm tra CRUD công việc</h1>
+    <button id="run" type="button">Chạy kiểm tra</button>
+    <pre id="result" aria-live="polite">Chưa chạy.</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const button = document.querySelector('#run');
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+        const taskInput = (title, categoryId) => ({
+          title,
+          description: 'Regression task description with enough detail.',
+          deadline: Utils.todayISO(),
+          priority: 'high',
+          status: 'todo',
+          categoryId,
+          tags: ['Regression']
+        });
+        const loginTestAccount = () => {
+          const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+          const email = `task-crud-${token}@taskflow.test`;
+          const registration = AuthService.register({
+            fullName: 'Task CRUD Check',
+            email,
+            password: '123456',
+            confirmPassword: '123456',
+            acceptTerms: true
+          });
+
+          assert(registration.ok, 'Could not register the test account.');
+          const login = AuthService.login({ email, password: '123456', remember: false });
+
+          assert(login.ok, 'Could not log in the test account.');
+          assert(WorkspaceService.ensureUserWorkspace(), 'Workspace initialization failed.');
+        };
+        const run = () => {
+          button.disabled = true;
+          output.className = '';
+          output.textContent = 'Đang chạy…';
+
+          try {
+            AuthService.logout();
+            loginTestAccount();
+
+            const categoryResult = CategoryService.add({
+              name: `Regression ${Date.now()}`,
+              color: '#6d5dfc',
+              icon: '🧪'
+            });
+
+            assert(categoryResult.ok, 'Could not create a category.');
+            const created = TaskService.createTask(
+              taskInput('Create update toggle delete', categoryResult.data.id)
+            );
+
+            assert(created.ok, 'Task creation failed.');
+            assert(TaskService.getTaskById(created.data.id)?.title === created.data.title,
+              'Created task cannot be read back.');
+
+            const updated = TaskService.updateTask(created.data.id, {
+              title: 'Updated regression task',
+              description: 'Updated regression task description with enough detail.',
+              priority: 'medium'
+            });
+
+            assert(updated.ok && updated.data.priority === 'medium', 'Task update failed.');
+            const completed = TaskService.toggleTaskStatus(created.data.id);
+
+            assert(completed?.status === 'done' && completed.progress === 100,
+              'Completing a task did not set status/progress.');
+            const reopened = TaskService.toggleTaskStatus(created.data.id);
+
+            assert(reopened?.status === 'todo' && reopened.progress === 0,
+              'Reopening a task did not reset status/progress.');
+            const inProgress = TaskService.setTaskStatus(created.data.id, 'progress');
+
+            assert(inProgress?.status === 'progress' && inProgress.progress < 100,
+              'Changing task status to progress failed.');
+            const duplicate = TaskService.duplicateTask(created.data.id);
+
+            assert(duplicate && duplicate.id !== created.data.id, 'Task duplication failed.');
+            assert(TaskService.deleteTask(duplicate.id), 'Task deletion failed.');
+            assert(!TaskService.getTaskById(duplicate.id), 'Deleted task is still present.');
+
+            const persisted = TaskService.getTasks().find(task => task.id === created.data.id);
+
+            assert(persisted?.title === 'Updated regression task',
+              'Task did not persist after reading LocalStorage again.');
+            const stats = StatisticsService.calculateTaskStats();
+
+            assert(stats.total === 1 && stats.progress === 1 && stats.pending === 1,
+              'Statistics do not reflect the task state.');
+            assert(TaskService.clearTasks(), 'Clear tasks failed.');
+            assert(TaskService.getTasks().length === 0, 'Tasks remain after clear.');
+            assert(AuthService.logout(), 'Could not log out the test account.');
+
+            output.className = 'ok';
+            output.textContent = 'Task CRUD, toggle, persistence, statistics and clear: PASS';
+          } catch (error) {
+            output.className = 'fail';
+            output.textContent = `FAIL: ${error.message}`;
+          } finally {
+            button.disabled = false;
+          }
+        };
+
+        button.addEventListener('click', run);
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow - Kiểm tra hidden</title>
+    <link rel="stylesheet" href="../assets/css/style.css">
+  </head>
+  <body>
+    <main class="page-shell" style="padding: 24px">
+      <h1>Kiểm tra quy tắc hidden</h1>
+      <pre id="result" aria-live="polite">Đang kiểm tra…</pre>
+      <div id="fixture" aria-hidden="true"></div>
+    </main>
+
+    <script>
+      'use strict';
+
+      (() => {
+        const classNames = [
+          'empty-state',
+          'auth-notice',
+          'detail-grid',
+          'pagination',
+          'setting-row',
+          'today-list',
+          'tasks-grid',
+          'tasks-list',
+          'categories-grid',
+          'modal-overlay',
+          'modal-footer',
+          'context-menu',
+          'popover',
+          'auth-modal'
+        ];
+        const fixture = document.querySelector('#fixture');
+        const result = document.querySelector('#result');
+        const failures = [];
+
+        classNames.forEach(className => {
+          const element = document.createElement('div');
+
+          element.className = className;
+          element.style.display = 'grid';
+          element.hidden = true;
+          fixture.appendChild(element);
+
+          if (getComputedStyle(element).display !== 'none') {
+            failures.push(`.${className} vẫn hiển thị khi có [hidden].`);
+          }
+
+          element.hidden = false;
+
+          if (getComputedStyle(element).display === 'none') {
+            failures.push(`.${className} không hiện lại sau khi bỏ [hidden].`);
+          }
+        });
+
+        if (failures.length) {
+          result.textContent = `FAIL\n${failures.join('\n')}`;
+          result.className = 'field-error';
+          return;
+        }
+
+        result.textContent = `PASS: ${classNames.length} loại thành phần đều bị ẩn bởi [hidden].`;
+        result.className = 'field-hint';
+      })();
+    </script>
+  </body>
+</html>

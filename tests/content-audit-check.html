@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow content audit check</title>
+    <style>html,body{margin:0;overflow:hidden}</style>
+  </head>
+  <body>
+    <pre id="result">Đang kiểm tra…</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const publicRoutes = ['login.html', 'register.html', 'forgot-password.html'];
+        const privateRoutes = [
+          'index.html', 'tasks.html', 'kanban.html', 'calendar.html',
+          'statistics.html', 'categories.html', 'profile.html', 'about.html'
+        ];
+        const forbidden = [
+          'bài tập lớn', 'đồ án', 'môn học', 'sinh viên', 'giảng viên', 'báo cáo',
+          'demo', 'source code', 'code', 'html', 'css', 'javascript', 'es6',
+          'jquery', 'bootstrap', 'localstorage', 'backend', 'frontend', 'database',
+          'crud', 'json', 'pwa', 'service worker', 'api', 'framework', 'công nghệ',
+          'responsive', 'chức năng bonus', 'yêu cầu đề bài', 'mô phỏng đăng nhập',
+          'không cần backend', 'lưu dữ liệu bằng localstorage'
+        ];
+        const isolatedTerms = new Set([
+          'demo', 'code', 'html', 'css', 'javascript', 'es6', 'jquery', 'bootstrap',
+          'localstorage', 'backend', 'frontend', 'database', 'crud', 'json', 'pwa',
+          'api', 'framework', 'responsive'
+        ]);
+        const hasForbiddenText = value => forbidden.filter(term => {
+          const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const expression = isolatedTerms.has(term) ?
+            new RegExp(`\\b${escapedTerm}\\b`, 'i') :
+            new RegExp(escapedTerm, 'i');
+
+          return expression.test(value);
+        });
+        const frame = document.createElement('iframe');
+
+        frame.setAttribute('aria-hidden', 'true');
+        frame.style.cssText =
+          'position:fixed;inset:0;width:100vw;height:100vh;border:0;visibility:hidden;pointer-events:none;';
+        document.body.appendChild(frame);
+
+        const waitForFrame = route => new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => reject(new Error(`${route}: quá thời gian tải`)), 5000);
+
+          frame.onload = () => {
+            window.setTimeout(() => {
+              window.clearTimeout(timeout);
+              resolve();
+            }, 350);
+          };
+          const separator = route.includes('?') ? '&' : '?';
+
+          frame.src = `../${route}${separator}contentAudit=1`;
+        });
+
+        const collectVisibleAndAssistiveText = doc => {
+          const attributes = [...doc.querySelectorAll('[aria-label], [title], [placeholder]')]
+            .flatMap(node => ['aria-label', 'title', 'placeholder']
+              .map(name => node.getAttribute(name) || ''));
+          const formValues = [...doc.querySelectorAll('input, textarea, select')]
+            .map(node => node.value || '');
+
+          return [doc.body?.innerText || '', ...attributes, ...formValues].join('\n');
+        };
+
+        const run = async () => {
+          try {
+            AuthService.logout();
+            const failures = [];
+
+            for (const route of publicRoutes) {
+              await waitForFrame(route);
+              const text = collectVisibleAndAssistiveText(frame.contentDocument);
+              const matches = hasForbiddenText(text);
+              const documentWidth = Math.max(
+                frame.contentDocument.documentElement.scrollWidth,
+                frame.contentDocument.body?.scrollWidth || 0
+              );
+
+              if (matches.length) {
+                failures.push(`${route}: ${matches.join(', ')}`);
+              }
+
+              if (documentWidth > frame.contentWindow.innerWidth + 1) {
+                failures.push(`${route}: nội dung rộng hơn màn hình`);
+              }
+
+            }
+
+            AuthService.ensureDemoAccount();
+            const users = Storage.rawRead(CONFIG.STORAGE.USERS, []);
+            const legacyExperience = users.find(user => user.id === 'user_demo');
+
+            if (!legacyExperience) {
+              throw new Error('Không tìm thấy không gian trải nghiệm để kiểm tra tương thích.');
+            }
+
+            legacyExperience.email = 'demo@taskflow.local';
+            legacyExperience.fullName = 'Tài khoản Demo';
+            legacyExperience.bio = 'Tài khoản dùng để trải nghiệm nhanh các chức năng.';
+
+            if (!Storage.rawWrite(CONFIG.STORAGE.USERS, users).ok) {
+              throw new Error('Không thể chuẩn bị dữ liệu cũ để kiểm tra.');
+            }
+
+            const login = AuthService.login({
+              email: 'trai-nghiem@taskflow.local',
+              password: '123456',
+              remember: true
+            });
+
+            if (!login.ok || !WorkspaceService.ensureUserWorkspace()) {
+              throw new Error('Không thể tạo phiên kiểm tra.');
+            }
+
+            WorkspaceService.seedDemoData();
+
+            for (const route of privateRoutes) {
+              await waitForFrame(route);
+              const text = collectVisibleAndAssistiveText(frame.contentDocument);
+              const matches = hasForbiddenText(text);
+              const documentWidth = Math.max(
+                frame.contentDocument.documentElement.scrollWidth,
+                frame.contentDocument.body?.scrollWidth || 0
+              );
+
+              if (matches.length) {
+                failures.push(`${route}: ${matches.join(', ')}`);
+              }
+
+              if (documentWidth > frame.contentWindow.innerWidth + 1) {
+                failures.push(`${route}: nội dung rộng hơn màn hình`);
+              }
+
+              const pageContent = frame.contentDocument.querySelector('#pageContent');
+              const contentStyle = pageContent ?
+                frame.contentWindow.getComputedStyle(pageContent) :
+                null;
+
+              if (contentStyle?.opacity !== '1' || contentStyle.animationName !== 'none') {
+                failures.push(`${route}: vùng nội dung chưa sẵn sàng khi mở trang`);
+              }
+
+              if (frame.contentDocument.querySelector('.navigation-curtain')) {
+                failures.push(`${route}: vẫn tạo lớp che khi điều hướng`);
+              }
+            }
+
+            await waitForFrame('tasks.html?sort=newest');
+
+            if (frame.contentDocument.querySelector('#sortFilter')?.value !== 'newest') {
+              failures.push('tasks.html?sort=newest: chưa áp dụng sắp xếp mới tạo gần đây');
+            }
+
+            output.textContent = failures.length ?
+              `FAIL: ${failures.join(' | ')}` :
+              `PASS: ${publicRoutes.length + privateRoutes.length} trang không có cụm từ cấm trong nội dung, nhãn hoặc gợi ý.`;
+          } catch (error) {
+            output.textContent = `FAIL: ${error.message}`;
+          } finally {
+            frame.remove();
+          }
+        };
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>

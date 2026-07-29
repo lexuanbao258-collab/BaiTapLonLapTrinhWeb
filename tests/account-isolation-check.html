@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow account isolation check</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+      button { padding: .6rem 1rem; cursor: pointer; }
+      pre { padding: 1rem; background: #111827; color: #e5e7eb; white-space: pre-wrap; }
+      .ok { color: #065f46; }
+      .fail { color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>Kiểm tra cách ly dữ liệu theo tài khoản</h1>
+    <p>Test tạo hai tài khoản riêng trong LocalStorage và không xóa dữ liệu hiện có.</p>
+    <button id="run" type="button">Chạy kiểm tra</button>
+    <pre id="result" aria-live="polite">Chưa chạy.</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/components/icons.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/backup-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const button = document.querySelector('#run');
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+        const taskInput = title => ({
+          title,
+          description: `Task description for ${title} with enough detail.`,
+          deadline: Utils.todayISO(),
+          priority: 'medium',
+          status: 'todo'
+        });
+        const register = (fullName, email) => {
+          const result = AuthService.register({
+            fullName,
+            email,
+            password: '123456',
+            confirmPassword: '123456',
+            acceptTerms: true
+          });
+
+          assert(result.ok, `Could not register ${email}.`);
+        };
+        const login = email => {
+          const result = AuthService.login({
+            email,
+            password: '123456',
+            remember: false
+          });
+
+          assert(result.ok, `Could not log in ${email}.`);
+          assert(WorkspaceService.ensureUserWorkspace(), 'Workspace initialization failed.');
+          return result.data;
+        };
+        const run = () => {
+          const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+          const emailA = `isolation-a-${token}@taskflow.test`;
+          const emailB = `isolation-b-${token}@taskflow.test`;
+          const lines = [];
+
+          button.disabled = true;
+          output.className = '';
+          output.textContent = 'Đang chạy…';
+
+          try {
+            AuthService.logout();
+            register('Isolation Account A', emailA);
+            const accountA = login(emailA);
+            const keyA = Storage.resolveKey(CONFIG.STORAGE.TASKS);
+            const createA = TaskService.createTask(taskInput('ONLY-ACCOUNT-A'));
+
+            assert(createA.ok, 'Could not create task for account A.');
+            const tasksA = JSON.stringify(TaskService.getTasks());
+            assert(AuthService.logout(), 'Could not log out account A.');
+            lines.push('Account A creates a private task: PASS');
+
+            register('Isolation Account B', emailB);
+            const accountB = login(emailB);
+            const keyB = Storage.resolveKey(CONFIG.STORAGE.TASKS);
+
+            assert(accountA.id !== accountB.id && keyA !== keyB, 'Scoped storage keys are not unique.');
+            assert(!TaskService.getTasks().some(task => task.title === 'ONLY-ACCOUNT-A'),
+              'Account B can read account A task.');
+            const createB = TaskService.createTask(taskInput('ONLY-ACCOUNT-B'));
+
+            assert(createB.ok, 'Could not create task for account B.');
+            const tasksB = JSON.stringify(TaskService.getTasks());
+            assert(AuthService.logout(), 'Could not log out account B.');
+            lines.push('Account B cannot see A and has its own workspace: PASS');
+
+            login(emailA);
+            assert(JSON.stringify(TaskService.getTasks()) === tasksA,
+              'Account A data changed after account B activity.');
+            const backup = BackupService.createBackup('Isolation regression backup');
+
+            assert(backup, 'Could not create account A backup.');
+            assert(TaskService.createTask(taskInput('ACCOUNT-A-TEMPORARY')).ok,
+              'Could not create task used to verify backup restore.');
+            assert(BackupService.restoreBackup(backup.id), 'Could not restore account A backup.');
+            assert(!TaskService.getTasks().some(task => task.title === 'ACCOUNT-A-TEMPORARY'),
+              'Internal backup did not restore the prior state.');
+            const externalSnapshot = BackupService.exportData();
+            assert(BackupService.clearAllData().ok, 'Could not clear account A data.');
+            assert(!TaskService.getTasks().length, 'Clear All did not clear only account A workspace.');
+            assert(BackupService.importData(externalSnapshot, { mode: 'overwrite' }).ok,
+              'Could not restore account A from exported JSON.');
+            assert(TaskService.getTasks().some(task => task.title === 'ONLY-ACCOUNT-A'),
+              'Exported JSON did not restore account A task.');
+            assert(AuthService.logout(), 'Could not log out restored account A.');
+
+            login(emailB);
+            assert(JSON.stringify(TaskService.getTasks()) === tasksB,
+              'Account B changed after backup operations on account A.');
+            assert(AuthService.logout(), 'Could not log out final account B session.');
+            lines.push('Backup restore, Clear All and JSON restore are scoped to account A: PASS');
+
+            output.className = 'ok';
+            output.textContent = `${lines.join('\n')}\n\nAll checks passed.`;
+          } catch (error) {
+            output.className = 'fail';
+            output.textContent = `${lines.join('\n')}\n\nFAIL: ${error.message}`;
+          } finally {
+            button.disabled = false;
+          }
+        };
+
+        button.addEventListener('click', run);
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow legacy migration check</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+      button { padding: .6rem 1rem; cursor: pointer; }
+      pre { padding: 1rem; background: #111827; color: #e5e7eb; white-space: pre-wrap; }
+      .ok { color: #065f46; }
+      .fail { color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>Kiểm tra migration LocalStorage cũ</h1>
+    <button id="run" type="button">Chạy kiểm tra</button>
+    <pre id="result" aria-live="polite">Chưa chạy.</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const button = document.querySelector('#run');
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+        const run = () => {
+          const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+          const email = `legacy-${token}@taskflow.test`;
+          const legacyTask = {
+            id: 'legacy-task',
+            title: 'Legacy task survives',
+            description: 'Legacy task description with enough detail.',
+            deadline: Utils.todayISO(),
+            priority: 'medium',
+            status: 'todo'
+          };
+          const legacyCategory = {
+            id: 'legacy-category',
+            name: 'Legacy category',
+            color: '#2563eb',
+            icon: 'folder'
+          };
+
+          button.disabled = true;
+          output.className = '';
+          output.textContent = 'Đang chạy…';
+
+          try {
+            AuthService.logout();
+            const registration = AuthService.register({
+              fullName: 'Legacy Migration Account',
+              email,
+              password: '123456',
+              confirmPassword: '123456',
+              acceptTerms: true
+            });
+
+            assert(registration.ok, 'Could not register migration test account.');
+            assert(AuthService.login({ email, password: '123456', remember: false }).ok,
+              'Could not log in migration test account.');
+            assert(Storage.clearUserData(registration.data.id).ok,
+              'Could not prepare an empty scoped workspace.');
+
+            [
+              [CONFIG.STORAGE.TASKS, [legacyTask]],
+              [CONFIG.STORAGE.CATEGORIES, [legacyCategory]],
+              [CONFIG.STORAGE.SETTINGS, { ...CONFIG.DEFAULT_SETTINGS, theme: 'dark' }],
+              [CONFIG.STORAGE.ACTIVITIES, []],
+              [CONFIG.STORAGE.BACKUPS, []],
+              [CONFIG.STORAGE.SEEDED, false]
+            ].forEach(([key, value]) => localStorage.setItem(key, JSON.stringify(value)));
+            localStorage.removeItem(CONFIG.STORAGE.LEGACY_MIGRATION);
+            localStorage.removeItem(CONFIG.STORAGE.LEGACY_CLEANUP);
+            localStorage.removeItem(CONFIG.STORAGE.LEGACY_SNAPSHOT);
+
+            const migration = Storage.migrateLegacyDataToActiveUser();
+
+            assert(migration.ok && migration.migrated, 'Legacy data was not migrated.');
+            assert(Storage.inspect(CONFIG.STORAGE.TASKS).value[0].id === legacyTask.id,
+              'Legacy task is missing from the scoped workspace.');
+            assert(Storage.inspect(CONFIG.STORAGE.CATEGORIES).value[0].id === legacyCategory.id,
+              'Legacy category is missing from the scoped workspace.');
+            assert(Storage.inspect(CONFIG.STORAGE.SETTINGS).value.theme === 'dark',
+              'Legacy settings are missing from the scoped workspace.');
+
+            const cleanup = Storage.cleanupLegacyData();
+
+            assert(cleanup.ok, 'Legacy cleanup failed after migration.');
+            assert(localStorage.getItem(CONFIG.STORAGE.TASKS) === null,
+              'Unscoped legacy task key was not cleaned.');
+            assert(localStorage.getItem(CONFIG.STORAGE.LEGACY_SNAPSHOT),
+              'Legacy snapshot was not retained.');
+
+            output.className = 'ok';
+            output.textContent = 'Scoped migration, snapshot retention and cleanup: PASS';
+          } catch (error) {
+            output.className = 'fail';
+            output.textContent = `FAIL: ${error.message}`;
+          } finally {
+            AuthService.logout();
+            button.disabled = false;
+          }
+        };
+
+        button.addEventListener('click', run);
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>

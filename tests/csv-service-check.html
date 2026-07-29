@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow CSV check</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+      button { padding: .6rem 1rem; cursor: pointer; }
+      pre { padding: 1rem; background: #111827; color: #e5e7eb; white-space: pre-wrap; }
+      .ok { color: #065f46; }
+      .fail { color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>Kiểm tra xuất và nhập CSV</h1>
+    <button id="run" type="button">Chạy kiểm tra</button>
+    <pre id="result" aria-live="polite">Chưa chạy.</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/components/icons.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/backup-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script src="../assets/js/services/csv-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const button = document.querySelector('#run');
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+        const loginTestAccount = token => {
+          const email = `csv-${token}@taskflow.test`;
+          const registration = AuthService.register({
+            fullName: 'CSV Test Account',
+            email,
+            password: '123456',
+            confirmPassword: '123456',
+            acceptTerms: true
+          });
+
+          assert(registration.ok, 'Could not register CSV test account.');
+          const login = AuthService.login({ email, password: '123456', remember: false });
+
+          assert(login.ok && WorkspaceService.ensureUserWorkspace(),
+            'Could not initialize CSV test workspace.');
+        };
+        const run = async () => {
+          const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+          const csv = [
+            'Title,Description,Deadline,Priority,Status,Category,Labels,Progress,Estimated Hours,Pinned',
+            `"CSV title, with comma","Detailed CSV description with a comma, suitable for validation.",${Utils.todayISO()},high,progress,CSV Project,Excel; Urgent,45,2.5,TRUE`
+          ].join('\r\n');
+
+          button.disabled = true;
+          output.className = '';
+          output.textContent = 'Đang chạy…';
+
+          try {
+            AuthService.logout();
+            loginTestAccount(token);
+            const parsed = await CSVService.parseCSVFile(new File([
+              `\uFEFF${csv}`
+            ], 'tasks.csv', { type: 'text/csv' }));
+
+            assert(CSVService.validateHeaders(parsed.headers).valid, 'Valid headers were rejected.');
+            assert(!CSVService.validateHeaders(['Title']).valid, 'Incomplete headers were accepted.');
+            const preview = CSVService.previewImport(parsed.rows);
+
+            assert(preview.valid === 1 && preview.invalid === 0, 'Valid CSV row was rejected.');
+            const merged = CSVService.importTasks(parsed.rows, 'merge');
+
+            assert(merged.ok && merged.count === 1, 'CSV merge import failed.');
+            assert(merged.categoriesCreated === 1, 'CSV category was not created.');
+            assert(TaskService.getTasks().some(task => task.title === 'CSV title, with comma'),
+              'Imported task is missing.');
+            assert(CategoryService.getAll().some(category => category.name === 'CSV Project'),
+              'Imported category is missing.');
+
+            const exported = CSVService.exportTasks();
+
+            assert(exported.startsWith('\uFEFFTitle,Description,Deadline'), 'Export is missing UTF-8 BOM or header.');
+            assert(exported.includes('"CSV title, with comma"'), 'Export did not escape a comma.');
+            const duplicate = CSVService.importTasks(parsed.rows, 'merge');
+
+            assert(duplicate.ok && duplicate.count === 0 && duplicate.duplicates === 1,
+              'Duplicate row was not skipped during merge.');
+
+            const replacement = await CSVService.parseCSVFile(new File([
+              `\uFEFFTitle,Description,Deadline,Priority,Status,Category,Labels,Progress,Estimated Hours,Pinned\r\nReplacement CSV task,Replacement CSV description suitable for validation.,${Utils.todayISO()},medium,todo,Work,CSV,0,1,FALSE`
+            ], 'replacement.csv', { type: 'text/csv' }));
+            const overwritten = CSVService.importTasks(replacement.rows, 'overwrite');
+
+            assert(overwritten.ok && overwritten.count === 1, 'CSV overwrite import failed.');
+            assert(!TaskService.getTasks().some(task => task.title === 'CSV title, with comma'),
+              'Overwrite kept the old task.');
+            assert(TaskService.getTasks().some(task => task.title === 'Replacement CSV task'),
+              'Overwrite did not persist the replacement task.');
+            assert(BackupService.getBackups().length > 0,
+              'Overwrite did not create a safety backup.');
+
+            output.className = 'ok';
+            output.textContent = 'CSV parsing, merge, duplicate handling, export and overwrite: PASS';
+          } catch (error) {
+            output.className = 'fail';
+            output.textContent = `FAIL: ${error.message}`;
+          } finally {
+            AuthService.logout();
+            button.disabled = false;
+          }
+        };
+
+        button.addEventListener('click', run);
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>

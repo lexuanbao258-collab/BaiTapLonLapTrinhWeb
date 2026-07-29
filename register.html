@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Đăng ký TaskFlow - Quản lý công việc cá nhân">
+  <meta name="theme-color" content="#6d5dfc">
+  <title>Đăng ký | TaskFlow</title>
+  <link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/responsive.css">
+</head>
+<body class="auth-body" data-auth-page="register">
+  <noscript>
+    <div class="noscript">TaskFlow cần trình duyệt hỗ trợ đầy đủ để hoạt động.</div>
+  </noscript>
+  <main class="auth-layout register-layout">
+    <section class="auth-showcase register-showcase">
+      <a class="auth-brand" href="login.html">
+        <img src="assets/img/logo.svg" alt="TaskFlow">
+        <span>
+          <strong>TaskFlow</strong>
+          <small>Không gian quản lý công việc cá nhân</small>
+        </span>
+      </a>
+      <div class="auth-showcase-content">
+        <span class="auth-pill">Bắt đầu cùng TaskFlow</span>
+        <h1>Tạo không gian làm việc<br>của bạn.</h1>
+        <p>
+          Bắt đầu quản lý công việc rõ ràng và hiệu quả hơn mỗi ngày.
+        </p>
+        <div class="register-benefits">
+          <div>
+            <span data-auth-icon="check"></span>
+            <p>
+              <strong>Quản lý tập trung</strong>
+              <small>Tất cả kế hoạch trong một giao diện trực quan.</small>
+            </p>
+          </div>
+          <div>
+            <span data-auth-icon="check"></span>
+            <p>
+              <strong>Theo cách của bạn</strong>
+              <small>Điều chỉnh giao diện phù hợp với thói quen sử dụng.</small>
+            </p>
+          </div>
+          <div>
+            <span data-auth-icon="check"></span>
+            <p>
+              <strong>Sao lưu linh hoạt</strong>
+              <small>Sao lưu và khôi phục dữ liệu khi cần.</small>
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="auth-orbit" aria-hidden="true">
+        <span></span><span></span><span></span>
+        <div><img src="assets/img/logo.svg" alt=""></div>
+      </div>
+      <p class="auth-copyright">TaskFlow — Tập trung vào điều quan trọng.</p>
+    </section>
+
+    <section class="auth-form-side">
+      <div class="auth-form-wrap register-form-wrap">
+        <div class="auth-mobile-brand">
+          <img src="assets/img/logo.svg" alt="TaskFlow">
+          <strong>TaskFlow</strong>
+        </div>
+        <header class="auth-form-header">
+          <span class="eyebrow">Bắt đầu cùng TaskFlow</span>
+          <h2>Tạo không gian làm việc của bạn</h2>
+          <p>Bắt đầu quản lý công việc rõ ràng và hiệu quả hơn mỗi ngày.</p>
+        </header>
+        <form id="registerForm" class="auth-form" novalidate>
+          <div class="form-field">
+            <label for="fullName">Họ và tên <em>*</em></label>
+            <div class="auth-input-wrap">
+              <span data-auth-icon="user"></span>
+              <input
+                id="fullName"
+                class="field-control"
+                name="fullName"
+                type="text"
+                autocomplete="name"
+                placeholder="Lê Xuân Bảo"
+                aria-describedby="fullNameError"
+              >
+            </div>
+            <small class="field-error" id="fullNameError"
+              data-error="fullName" aria-live="polite"></small>
+          </div>
+          <div class="form-field">
+            <label for="registerEmail">Email <em>*</em></label>
+            <div class="auth-input-wrap">
+              <span data-auth-icon="mail"></span>
+              <input
+                id="registerEmail"
+                class="field-control"
+                name="email"
+                type="email"
+                autocomplete="email"
+                placeholder="bao@example.com"
+                aria-describedby="registerEmailError"
+              >
+            </div>
+            <small class="field-error" id="registerEmailError"
+              data-error="email" aria-live="polite"></small>
+          </div>
+          <div class="form-grid two auth-two-cols">
+            <div class="form-field">
+              <label for="registerPassword">Mật khẩu <em>*</em></label>
+              <div class="auth-input-wrap">
+                <span data-auth-icon="lock"></span>
+                <input
+                  id="registerPassword"
+                  class="field-control"
+                  name="password"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="Ít nhất 6 ký tự"
+                  aria-describedby="registerPasswordError passwordStrength"
+                >
+                <button
+                  class="password-toggle"
+                  type="button"
+                  data-toggle-password="registerPassword"
+                  aria-label="Hiện mật khẩu"
+                ></button>
+              </div>
+              <small class="field-error" id="registerPasswordError"
+                data-error="password" aria-live="polite"></small>
+            </div>
+            <div class="form-field">
+              <label for="confirmPassword">Nhập lại mật khẩu <em>*</em></label>
+              <div class="auth-input-wrap">
+                <span data-auth-icon="lock"></span>
+                <input
+                  id="confirmPassword"
+                  class="field-control"
+                  name="confirmPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="Nhập lại mật khẩu"
+                  aria-describedby="confirmPasswordError"
+                >
+                <button
+                  class="password-toggle"
+                  type="button"
+                  data-toggle-password="confirmPassword"
+                  aria-label="Hiện mật khẩu xác nhận"
+                ></button>
+              </div>
+              <small class="field-error" id="confirmPasswordError"
+                data-error="confirmPassword" aria-live="polite"></small>
+            </div>
+          </div>
+          <div class="password-strength" id="passwordStrength" aria-live="polite">
+            <div><i></i><i></i><i></i><i></i></div>
+            <span>Độ mạnh mật khẩu</span>
+          </div>
+          <label class="check-label terms-check">
+            <input
+              name="acceptTerms"
+              type="checkbox"
+              aria-describedby="acceptTermsError"
+            >
+            <span></span>
+            <p>
+              Tôi đồng ý với <strong>điều khoản sử dụng</strong> của TaskFlow.
+            </p>
+          </label>
+          <small class="field-error" id="acceptTermsError"
+            data-error="acceptTerms" aria-live="polite"></small>
+          <div class="form-general-error" data-error="general"
+            role="alert" aria-live="polite"></div>
+          <button class="btn btn-primary auth-submit" type="submit">
+            <span>Tạo tài khoản</span>
+            <i class="button-loader"></i>
+          </button>
+        </form>
+        <p class="auth-switch">Đã có tài khoản? <a id="loginLink" href="login.html">Đăng nhập ngay</a></p>
+      </div>
+    </section>
+  </main>
+
+<script src="assets/js/core/config.js"></script>
+<script src="assets/js/components/icons.js"></script>
+<script src="assets/js/core/utils.js"></script>
+<script src="assets/js/core/storage.js"></script>
+<script src="assets/js/core/validators.js"></script>
+<script src="assets/js/services/auth-service.js"></script>
+<script src="assets/js/pages/auth-page.js"></script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow profile interaction check</title>
+    <style>html,body{margin:0;overflow:hidden}</style>
+  </head>
+  <body>
+    <pre id="result">Đang kiểm tra…</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const frame = document.createElement('iframe');
+        const wait = milliseconds => new Promise(resolve => {
+          window.setTimeout(resolve, milliseconds);
+        });
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+        const createTestAccount = () => {
+          const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+          const email = `profile-check-${token}@taskflow.test`;
+          const registration = AuthService.register({
+            fullName: 'Profile Interaction Check',
+            email,
+            password: '123456',
+            confirmPassword: '123456',
+            acceptTerms: true
+          });
+
+          assert(registration.ok, 'Không thể tạo tài khoản kiểm tra.');
+          const login = AuthService.login({
+            email,
+            password: '123456',
+            remember: false
+          });
+
+          assert(login.ok, 'Không thể đăng nhập tài khoản kiểm tra.');
+          assert(WorkspaceService.ensureUserWorkspace(), 'Không thể khởi tạo dữ liệu kiểm tra.');
+          return email;
+        };
+        const loadProfile = () => new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            reject(new Error('Trang hồ sơ tải quá lâu.'));
+          }, 5000);
+
+          frame.onload = () => {
+            window.setTimeout(() => {
+              window.clearTimeout(timeout);
+              resolve(frame.contentDocument);
+            }, 250);
+          };
+          frame.src = '../profile.html?profileInteractionCheck=1';
+        });
+
+        const run = async () => {
+          let email = '';
+
+          try {
+            frame.setAttribute('aria-hidden', 'true');
+            frame.style.cssText =
+              'position:fixed;inset:0;width:100vw;height:100vh;border:0;visibility:hidden;pointer-events:none;';
+            document.body.appendChild(frame);
+            AuthService.logout();
+            email = createTestAccount();
+
+            const doc = await loadProfile();
+            const profileForm = doc.querySelector('#profileForm');
+            const profileActions = doc.querySelector('#profileFormActions');
+            const editButton = doc.querySelector('#editProfile');
+            const profileName = doc.querySelector('#profileName');
+            const avatarChoice = doc.querySelector('[data-avatar-color]');
+            const passwordModal = doc.querySelector('#changePasswordModal');
+            const passwordForm = doc.querySelector('#passwordForm');
+            const oldPassword = doc.querySelector('#oldPassword');
+
+            assert(profileForm?.getAttribute('aria-readonly') === 'true',
+              'Hồ sơ không khởi tạo ở chế độ chỉ xem.');
+            assert(profileName?.readOnly && avatarChoice?.disabled,
+              'Trường hồ sơ hoặc lựa chọn ảnh đại diện vẫn có thể chỉnh sửa.');
+            assert(profileActions?.hidden && !editButton?.hidden,
+              'Nút lưu/hủy hoặc nút chỉnh sửa không đúng trạng thái mặc định.');
+            assert(passwordModal?.hidden && oldPassword?.getClientRects().length === 0,
+              'Biểu mẫu đổi mật khẩu đang xuất hiện khi chưa được yêu cầu.');
+            const documentWidth = Math.max(
+              doc.documentElement.scrollWidth,
+              doc.body?.scrollWidth || 0
+            );
+            assert(documentWidth <= frame.contentWindow.innerWidth + 1,
+              'Trang hồ sơ bị tràn ngang ở kích thước đang kiểm tra.');
+
+            const savedName = profileName.value;
+            editButton.click();
+            assert(!profileName.readOnly && !avatarChoice.disabled && !profileActions.hidden,
+              'Nút chỉnh sửa không mở đúng chế độ chỉnh sửa hồ sơ.');
+            profileName.value = 'Giá trị không lưu';
+            doc.querySelector('#cancelProfileEdit').click();
+            assert(profileName.readOnly && profileName.value === savedName && profileActions.hidden,
+              'Hủy chỉnh sửa không khôi phục chế độ xem hoặc dữ liệu ban đầu.');
+
+            doc.querySelector('#openChangePassword').click();
+            await wait(150);
+            assert(!passwordModal.hidden && oldPassword.value === '' &&
+              oldPassword.getAttribute('autocomplete') === 'off',
+            'Modal đổi mật khẩu không mở an toàn với trường mật khẩu trống.');
+            passwordModal.querySelector('[data-change-password-close]').click();
+            await wait(220);
+            assert(passwordModal.hidden && oldPassword.value === '',
+              'Đóng modal chưa xóa giá trị mật khẩu hoặc chưa ẩn biểu mẫu.');
+
+            doc.querySelector('#openChangePassword').click();
+            await wait(150);
+            oldPassword.value = '123456';
+            doc.querySelector('#newPassword').value = '654321';
+            doc.querySelector('#newPasswordConfirm').value = '654321';
+            passwordForm.dispatchEvent(new Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            await wait(220);
+            assert(passwordModal.hidden,
+              'Lưu mật khẩu mới không đóng modal.');
+
+            const changedLogin = AuthService.login({
+              email,
+              password: '654321',
+              remember: false
+            });
+            assert(changedLogin.ok, 'Mật khẩu mới không được lưu đúng.');
+            assert(AuthService.deleteAccount('654321').ok,
+              'Không thể dọn tài khoản kiểm tra.');
+
+            output.textContent = 'PASS: trạng thái xem, chỉnh sửa hồ sơ và modal đổi mật khẩu hoạt động đúng.';
+          } catch (error) {
+            output.textContent = `FAIL: ${error.message}`;
+          } finally {
+            frame.remove();
+
+            if (email && AuthService.getCurrentUser()) {
+              AuthService.logout();
+            }
+          }
+        };
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Browser profiles and test data
+.chrome*/
+.chrome-account-after-csv/
+Cache/
+History
+Cookies
+Login Data
+Sessions/
+Web Data
+
+# Temporary files
+.icon-render.html
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Cache
+.cache/
+temp/
+tmp/
+Temp/
+logs/
+
+# Local archives (generated during manual testing)
+*.zip

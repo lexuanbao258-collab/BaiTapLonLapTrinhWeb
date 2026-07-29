@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="TaskFlow - Lập kế hoạch, quản lý deadline và theo dõi tiến độ trong không gian cá nhân.">
+  <meta name="theme-color" content="#6d5dfc">
+  <title>Lịch công việc | TaskFlow</title>
+  <link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <script src="assets/js/core/theme-bootstrap.js" blocking="render"></script>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/responsive.css">
+</head>
+<body data-page="calendar" data-title="Lịch công việc" data-description="Theo dõi deadline theo ngày, tuần và tháng.">
+  <noscript>
+    <div class="noscript">TaskFlow cần trình duyệt hỗ trợ đầy đủ để hoạt động.</div>
+  </noscript>
+
+  <div class="app-layout" id="appLayout">
+    <!-- Sidebar dùng chung -->
+    <aside class="sidebar" id="sidebar" aria-label="Điều hướng chính">
+      <div class="sidebar-brand">
+        <a href="index.html" class="brand-link">
+          <img src="assets/img/logo.svg" alt="TaskFlow">
+          <span>
+            <strong>TaskFlow</strong>
+            <small>Personal workspace</small>
+          </span>
+        </a>
+        <button
+          class="icon-btn sidebar-collapse"
+          id="sidebarCollapse"
+          type="button"
+          title="Thu gọn"
+          aria-label="Thu gọn thanh điều hướng"
+        >
+          <i data-icon="chevronLeft" data-icon-size="19"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Không gian làm việc">
+        <p class="nav-caption">Không gian làm việc</p>
+        <a class="nav-link" href="index.html" data-page="dashboard">
+          <i data-icon="dashboard" data-icon-size="20"></i>
+          <span>Tổng quan</span>
+        </a>
+        <a class="nav-link" href="tasks.html" data-page="tasks">
+          <i data-icon="tasks" data-icon-size="20"></i>
+          <span>Công việc</span>
+          <b class="nav-count" data-count="pending"></b>
+        </a>
+        <a class="nav-link" href="kanban.html" data-page="kanban">
+          <i data-icon="kanban" data-icon-size="20"></i>
+          <span>Bảng Kanban</span>
+        </a>
+        <a class="nav-link" href="calendar.html" data-page="calendar">
+          <i data-icon="calendar" data-icon-size="20"></i>
+          <span>Lịch công việc</span>
+          <b class="nav-count" data-count="today"></b>
+        </a>
+        <a class="nav-link" href="categories.html" data-page="categories">
+          <i data-icon="category" data-icon-size="20"></i>
+          <span>Danh mục &amp; nhãn</span>
+        </a>
+        <a class="nav-link" href="statistics.html" data-page="statistics">
+          <i data-icon="chart" data-icon-size="20"></i>
+          <span>Thống kê</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="focus-card">
+          <div class="focus-icon">
+            <i data-icon="target" data-icon-size="22"></i>
+          </div>
+          <div>
+            <strong>Giữ nhịp hôm nay</strong>
+            <p data-focus-text>Hoàn thành từng việc nhỏ.</p>
+          </div>
+        </div>
+        <a class="nav-link" href="about.html" data-settings-link>
+          <i data-icon="settings" data-icon-size="20"></i>
+          <span>Cài đặt &amp; dữ liệu</span>
+        </a>
+      </div>
+    </aside>
+
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <div class="main-area">
+      <!-- Topbar dùng chung -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button
+            class="icon-btn mobile-menu"
+            id="mobileMenu"
+            type="button"
+            aria-label="Mở menu"
+            aria-controls="sidebar"
+            aria-expanded="false"
+          >
+            <i data-icon="menu" data-icon-size="22"></i>
+          </button>
+          <label class="global-search" for="globalSearch">
+            <i data-icon="search" data-icon-size="18"></i>
+            <input
+              id="globalSearch"
+              type="search"
+              placeholder="Tìm nhanh công việc..."
+              autocomplete="off"
+            >
+            <kbd>Ctrl K</kbd>
+          </label>
+        </div>
+
+        <div class="topbar-actions">
+          <button
+            class="icon-btn"
+            id="themeToggle"
+            type="button"
+            title="Đổi giao diện"
+            aria-label="Đổi giao diện sáng hoặc tối"
+          >
+            <i id="themeIcon" data-icon="moon" data-icon-size="20"></i>
+          </button>
+          <button
+            class="icon-btn notification-btn"
+            id="notificationBtn"
+            type="button"
+            title="Thông báo"
+            aria-label="Mở thông báo"
+            aria-controls="notificationPopover"
+            aria-expanded="false"
+          >
+            <i data-icon="bell" data-icon-size="20"></i>
+            <span data-notification-count></span>
+          </button>
+          <button
+            class="profile-chip"
+            id="profileChip"
+            type="button"
+            aria-label="Mở menu tài khoản"
+            aria-controls="profilePopover"
+            aria-expanded="false"
+          >
+            <span class="avatar" data-current-user-initials>TF</span>
+            <span>
+              <strong data-current-user-name>Người dùng</strong>
+              <small data-current-user-role>Người dùng TaskFlow</small>
+            </span>
+            <i class="profile-chevron" data-icon="chevronDown" data-icon-size="15"></i>
+          </button>
+        </div>
+      </header>
+
+      <main class="page-shell" id="mainContent">
+        <header class="page-header">
+          <div>
+            <span class="eyebrow">Không gian cá nhân</span>
+            <h1>Lịch công việc</h1>
+            <p>Theo dõi deadline theo ngày, tuần và tháng.</p>
+          </div>
+          <div class="page-header-actions" id="pageHeaderActions">
+            <button class="btn btn-ghost" id="todayBtn" type="button">
+              <i data-icon="target" data-icon-size="17"></i>
+              Hôm nay
+            </button>
+            <button class="btn btn-primary" id="addCalendar" type="button">
+              <i data-icon="plus" data-icon-size="17"></i>
+              Thêm công việc
+            </button>
+          </div>
+        </header>
+
+        <div id="pageContent" class="page-content">
+          <section class="calendar-layout">
+            <article class="panel calendar-panel">
+              <header class="calendar-toolbar">
+                <div class="calendar-nav">
+                  <button
+                    class="icon-btn"
+                    id="prevMonth"
+                    type="button"
+                    aria-label="Xem tháng trước"
+                  >
+                    <i data-icon="chevronLeft" data-icon-size="19"></i>
+                  </button>
+                  <h2 id="calendarMonthTitle">Lịch tháng</h2>
+                  <button
+                    class="icon-btn"
+                    id="nextMonth"
+                    type="button"
+                    aria-label="Xem tháng sau"
+                  >
+                    <i data-icon="chevronRight" data-icon-size="19"></i>
+                  </button>
+                </div>
+                <span class="muted-text calendar-helper">
+                  Nhấp vào một ngày để xem chi tiết
+                </span>
+              </header>
+
+              <div class="calendar-weekdays" aria-hidden="true">
+                <span>Thứ 2</span>
+                <span>Thứ 3</span>
+                <span>Thứ 4</span>
+                <span>Thứ 5</span>
+                <span>Thứ 6</span>
+                <span>Thứ 7</span>
+                <span>CN</span>
+              </div>
+              <div
+                class="calendar-grid"
+                id="calendarGrid"
+                aria-label="Các ngày trong tháng"
+                aria-live="polite"
+              ></div>
+            </article>
+
+            <aside class="panel day-agenda" id="agenda" aria-labelledby="agendaTitle">
+              <h2 class="sr-only" id="agendaTitle">Công việc trong ngày đã chọn</h2>
+              <div class="agenda-date">
+                <strong id="agendaDayNumber">--</strong>
+                <span id="agendaDayLabel">Chọn một ngày</span>
+              </div>
+              <div class="agenda-list" id="agendaList" aria-live="polite"></div>
+              <section class="empty-state" id="agendaEmptyState" hidden>
+                <img src="assets/img/empty-state.svg" alt="">
+                <h3>Ngày này chưa có công việc</h3>
+                <p>Bạn có thể thêm nhanh một công việc với deadline đã chọn.</p>
+                <button class="btn btn-primary" id="addAgendaTask" type="button">
+                  <i data-icon="plus" data-icon-size="17"></i>
+                  Thêm vào ngày này
+                </button>
+              </section>
+            </aside>
+          </section>
+        </div>
+      </main>
+
+      <!-- Footer dùng chung -->
+      <footer class="app-footer">
+        <span>© 2026 TaskFlow. Quản lý công việc rõ ràng hơn mỗi ngày.</span>
+        <span>TaskFlow — Tập trung vào điều quan trọng.</span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Popover dùng chung -->
+  <section
+    class="popover notification-popover"
+    id="notificationPopover"
+    aria-label="Thông báo công việc"
+    hidden
+  >
+    <header class="popover-header">
+      <div>
+        <span class="eyebrow">Nhắc việc</span>
+        <h2>Thông báo</h2>
+      </div>
+      <a href="tasks.html?date=overdue">Xem tất cả</a>
+    </header>
+    <div class="notification-list" id="notificationList" aria-live="polite"></div>
+  </section>
+
+  <nav class="popover profile-popover" id="profilePopover" aria-label="Tài khoản" hidden>
+    <div class="profile-popover-head">
+      <span class="avatar large" data-current-user-initials>TF</span>
+      <div>
+        <strong data-current-user-name>Người dùng</strong>
+        <small data-current-user-email>email@example.com</small>
+      </div>
+    </div>
+    <a href="profile.html">
+      <i data-icon="user" data-icon-size="17"></i>
+      Hồ sơ cá nhân
+    </a>
+    <a href="about.html">
+      <i data-icon="settings" data-icon-size="17"></i>
+      Cài đặt ứng dụng
+    </a>
+    <button id="quickBackupButton" type="button">
+      <i data-icon="backup" data-icon-size="17"></i>
+      Sao lưu nhanh
+    </button>
+    <button id="quickAddTaskButton" type="button">
+      <i data-icon="plus" data-icon-size="17"></i>
+      Thêm công việc
+    </button>
+    <hr>
+    <button class="danger" id="logoutButton" type="button">
+      <i data-icon="logout" data-icon-size="17"></i>
+      Đăng xuất
+    </button>
+  </nav>
+
+  <!-- Modal thêm/sửa công việc dùng chung -->
+  <div class="modal-overlay" id="taskModal" hidden>
+    <section
+      class="modal modal-xl"
+      id="taskModalDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="taskModalTitle"
+    >
+      <header class="modal-header">
+        <div>
+          <span class="eyebrow">TaskFlow</span>
+          <h2 id="taskModalTitle">Thêm công việc mới</h2>
+        </div>
+        <button
+          class="icon-btn modal-close"
+          type="button"
+          data-task-modal-close
+          aria-label="Đóng"
+        >
+          <i data-icon="close" data-icon-size="20"></i>
+        </button>
+      </header>
+
+      <div class="modal-body">
+        <form id="taskForm" novalidate>
+          <input id="taskId" name="id" type="hidden">
+          <div class="form-grid two">
+            <div class="form-field span-2">
+              <label for="taskTitle">Tiêu đề <em>*</em></label>
+              <input
+                class="field-control"
+                id="taskTitle"
+                name="title"
+                type="text"
+                maxlength="100"
+                placeholder="Ví dụ: Hoàn thành kế hoạch tuần này"
+                required
+              >
+              <small class="field-error" aria-live="polite"></small>
+            </div>
+
+            <div class="form-field span-2">
+              <label for="taskDescription">Mô tả <em>*</em></label>
+              <textarea
+                class="field-control"
+                id="taskDescription"
+                name="description"
+                rows="4"
+                maxlength="1000"
+                placeholder="Mô tả cụ thể công việc cần làm..."
+                required
+              ></textarea>
+              <div class="field-foot">
+                <small class="field-error" aria-live="polite"></small>
+                <small data-char-count>0/1000</small>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="taskDeadline">Deadline <em>*</em></label>
+              <input
+                class="field-control"
+                id="taskDeadline"
+                name="deadline"
+                type="date"
+                required
+              >
+              <small class="field-error" aria-live="polite"></small>
+            </div>
+
+            <div class="form-field">
+              <label for="taskCategory">Danh mục</label>
+              <select class="field-control" id="taskCategory" name="categoryId">
+                <option value="">Chưa phân loại</option>
+              </select>
+              <small class="field-error" aria-live="polite"></small>
+            </div>
+
+            <div class="form-field">
+              <label for="taskPriority">Mức ưu tiên <em>*</em></label>
+              <select class="field-control" id="taskPriority" name="priority">
+                <option value="low">Thấp</option>
+                <option value="medium">Trung bình</option>
+                <option value="high">Cao</option>
+              </select>
+              <small class="field-error" aria-live="polite"></small>
+            </div>
+
+            <div class="form-field">
+              <label for="taskStatus">Trạng thái</label>
+              <select class="field-control" id="taskStatus" name="status">
+                <option value="todo">Cần làm</option>
+                <option value="progress">Đang thực hiện</option>
+                <option value="done">Hoàn thành</option>
+              </select>
+              <small class="field-error" aria-live="polite"></small>
+            </div>
+
+            <div class="form-field">
+              <label for="taskEstimate">Thời gian dự kiến (giờ)</label>
+              <input
+                class="field-control"
+                id="taskEstimate"
+                name="estimate"
+                type="number"
+                min="0"
+                max="1000"
+                step="0.5"
+                placeholder="2.5"
+              >
+              <small class="field-error" aria-live="polite"></small>
+            </div>
+
+            <div class="form-field">
+              <label for="taskProgress">Tiến độ</label>
+              <div class="range-field">
+                <input
+                  id="taskProgress"
+                  name="progress"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value="0"
+                >
+                <output for="taskProgress">0%</output>
+              </div>
+              <small class="field-error" aria-live="polite"></small>
+            </div>
+
+            <div class="form-field span-2">
+              <label for="taskTags">Nhãn</label>
+              <input
+                class="field-control"
+                id="taskTags"
+                name="tags"
+                type="text"
+                placeholder="Ví dụ: Công việc, Cá nhân, Ưu tiên"
+              >
+              <small class="field-hint">Phân cách các nhãn bằng dấu phẩy.</small>
+            </div>
+
+            <div class="form-field span-2">
+              <div class="section-heading">
+                <span>Checklist công việc con</span>
+                <button
+                  type="button"
+                  class="btn btn-mini btn-soft"
+                  data-add-subtask
+                >
+                  <i data-icon="plus" data-icon-size="15"></i>
+                  Thêm mục
+                </button>
+              </div>
+              <div class="subtask-editor" data-subtask-editor></div>
+            </div>
+
+            <div class="form-field span-2">
+              <label for="taskNotes">Ghi chú</label>
+              <textarea
+                class="field-control"
+                id="taskNotes"
+                name="notes"
+                rows="3"
+                placeholder="Ghi chú bổ sung..."
+              ></textarea>
+            </div>
+
+            <label class="switch-row span-2">
+              <span>
+                <strong>Ghim công việc</strong>
+                <small>Đưa công việc quan trọng lên đầu danh sách.</small>
+              </span>
+              <input type="checkbox" name="pinned">
+              <i></i>
+            </label>
+          </div>
+        </form>
+      </div>
+
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="cancelTaskButton" type="button">
+          Hủy
+        </button>
+        <button
+          class="btn btn-primary"
+          id="saveTaskButton"
+          type="submit"
+          form="taskForm"
+        >
+          <i data-icon="check" data-icon-size="17"></i>
+          <span data-save-task-label>Thêm công việc</span>
+        </button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Modal chi tiết công việc dùng chung -->
+  <div class="modal-overlay" id="taskDetailModal" hidden>
+    <section
+      class="modal modal-lg"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="taskDetailModalTitle"
+    >
+      <header class="modal-header">
+        <div>
+          <span class="eyebrow">TaskFlow</span>
+          <h2 id="taskDetailModalTitle">Chi tiết công việc</h2>
+        </div>
+        <button
+          class="icon-btn modal-close"
+          type="button"
+          data-task-detail-close
+          aria-label="Đóng"
+        >
+          <i data-icon="close" data-icon-size="20"></i>
+        </button>
+      </header>
+      <div class="modal-body" id="taskDetailBody"></div>
+      <footer class="modal-footer">
+        <button class="btn btn-soft" id="taskDetailEditButton" type="button">
+          <i data-icon="edit" data-icon-size="17"></i>
+          Chỉnh sửa
+        </button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Modal xác nhận dùng chung -->
+  <div class="modal-overlay" id="confirmModal" hidden>
+    <section
+      class="modal modal-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirmModalTitle"
+    >
+      <header class="modal-header">
+        <div>
+          <span class="eyebrow">TaskFlow</span>
+          <h2 id="confirmModalTitle">Xác nhận thao tác</h2>
+        </div>
+      </header>
+      <div class="modal-body">
+        <div class="confirm-content">
+          <span class="confirm-icon danger" id="confirmModalIcon">
+            <i data-icon="warning" data-icon-size="28"></i>
+          </span>
+          <p id="confirmModalMessage">Bạn có chắc chắn muốn tiếp tục?</p>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" id="confirmCancelButton" type="button">
+          Hủy
+        </button>
+        <button class="btn btn-danger" id="confirmAcceptButton" type="button">
+          Xác nhận
+        </button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Modal tổng quát cho nội dung dữ liệu động nhỏ -->
+  <div class="modal-overlay" id="genericModal" hidden>
+    <section
+      class="modal modal-md"
+      id="genericModalDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="genericModalTitle"
+    >
+      <header class="modal-header">
+        <div>
+          <span class="eyebrow">TaskFlow</span>
+          <h2 id="genericModalTitle">Thông tin</h2>
+        </div>
+        <button
+          class="icon-btn modal-close"
+          type="button"
+          data-generic-modal-close
+          aria-label="Đóng"
+        >
+          <i data-icon="close" data-icon-size="20"></i>
+        </button>
+      </header>
+      <div class="modal-body" id="genericModalBody"></div>
+      <footer class="modal-footer" id="genericModalFooter" hidden></footer>
+    </section>
+  </div>
+
+  <div id="toastRoot" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="assets/js/core/config.js"></script>
+  <script src="assets/js/components/icons.js"></script>
+  <script src="assets/js/core/utils.js"></script>
+  <script src="assets/js/core/storage.js"></script>
+  <script src="assets/js/core/validators.js"></script>
+  <script src="assets/js/services/auth-service.js"></script>
+  <script src="assets/js/services/settings-service.js"></script>
+  <script src="assets/js/services/activity-service.js"></script>
+  <script src="assets/js/services/category-service.js"></script>
+  <script src="assets/js/services/task-service.js"></script>
+  <script src="assets/js/services/statistics-service.js"></script>
+  <script src="assets/js/services/backup-service.js"></script>
+  <script src="assets/js/services/workspace-service.js"></script>
+  <script src="assets/js/components/toast.js"></script>
+  <script src="assets/js/components/modal.js"></script>
+  <script src="assets/js/components/confirm-dialog.js"></script>
+  <script src="assets/js/components/task-card.js"></script>
+  <script src="assets/js/components/task-form.js"></script>
+  <script src="assets/js/components/task-actions.js"></script>
+  <script src="assets/js/components/ui-facade.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script src="assets/js/pages/calendar-page.js"></script>
+</body>
+</html>

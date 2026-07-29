@@ -1,0 +1,23 @@
+{
+  "app": "TaskFlow",
+  "version": "1.0.0",
+  "description": "Danh sách gợi ý để bắt đầu lập kế hoạch và theo dõi tiến độ.",
+  "taskSchema": {
+    "id": "task_xxx",
+    "title": "Tiêu đề công việc",
+    "description": "Mô tả tối thiểu 10 ký tự",
+    "deadline": "YYYY-MM-DD",
+    "priority": "low | medium | high",
+    "status": "todo | progress | done",
+    "categoryId": "cat_xxx",
+    "tags": ["Phát triển bản thân"],
+    "pinned": false,
+    "estimate": 2,
+    "progress": 50,
+    "subtasks": [{"id":"sub_xxx","title":"Công việc con","done":false}],
+    "notes": "Ghi chú",
+    "createdAt": "ISO datetime",
+    "updatedAt": "ISO datetime",
+    "completedAt": null
+  }
+}

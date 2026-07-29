@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow backup merge check</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+      button { padding: .6rem 1rem; cursor: pointer; }
+      pre { padding: 1rem; background: #111827; color: #e5e7eb; white-space: pre-wrap; }
+      .ok { color: #065f46; }
+      .fail { color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>Kiểm tra gộp JSON không mất danh mục</h1>
+    <button id="run" type="button">Chạy kiểm tra</button>
+    <pre id="result" aria-live="polite">Chưa chạy.</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/components/icons.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/backup-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const button = document.querySelector('#run');
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+        const taskData = (id, title, categoryId) => ({
+          id,
+          title,
+          description: `Detailed description for ${title} to satisfy validation.`,
+          deadline: Utils.todayISO(),
+          priority: 'medium',
+          status: 'todo',
+          categoryId,
+          progress: 0
+        });
+        const run = () => {
+          const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+          const email = `merge-${token}@taskflow.test`;
+
+          button.disabled = true;
+          output.className = '';
+          output.textContent = 'Đang chạy…';
+
+          try {
+            AuthService.logout();
+            const registration = AuthService.register({
+              fullName: 'Merge Test Account',
+              email,
+              password: '123456',
+              confirmPassword: '123456',
+              acceptTerms: true
+            });
+
+            assert(registration.ok, 'Could not register merge test account.');
+            assert(AuthService.login({ email, password: '123456', remember: false }).ok,
+              'Could not log in merge test account.');
+            assert(WorkspaceService.ensureUserWorkspace(), 'Could not initialize merge workspace.');
+
+            const currentCategoryResult = CategoryService.add({
+              name: 'Existing Category',
+              color: '#2563eb',
+              icon: 'folder'
+            });
+
+            assert(currentCategoryResult.ok, 'Could not create current category.');
+            const currentCategory = currentCategoryResult.data;
+            const oldTaskResult = TaskService.createTask(
+              taskData('', 'Current task stays', currentCategory.id)
+            );
+
+            assert(oldTaskResult.ok, 'Could not create current task.');
+            const oldTask = oldTaskResult.data;
+            const payload = {
+              tasks: [
+                taskData(oldTask.id, 'Duplicate ID is skipped', 'cat-matched'),
+                taskData('import-new-a', 'Imported mapped task', 'cat-matched'),
+                taskData('import-new-b', 'Imported collision task', currentCategory.id)
+              ],
+              categories: [
+                { id: 'cat-matched', name: '  existing category ', color: '#ef4444', icon: 'folder' },
+                { id: currentCategory.id, name: 'Collision-safe category', color: '#10b981', icon: 'folder' },
+                { id: 'cat-fresh', name: 'Fresh imported category', color: '#f59e0b', icon: 'folder' }
+              ]
+            };
+            const result = BackupService.importData(payload, { mode: 'merge' });
+
+            assert(result.ok, 'Merge import failed.');
+            assert(result.tasksAdded === 2 && result.tasksSkipped === 1,
+              'Task counts do not report added and skipped IDs correctly.');
+            assert(result.categoriesAdded === 2 && result.categoriesMatched === 1,
+              'Category counts do not report added and matched names correctly.');
+
+            const categories = CategoryService.getAll();
+            const tasks = TaskService.getTasks();
+            const categoryNameKeys = categories.map(category => Utils.normalize(category.name));
+
+            assert(tasks.some(task => task.id === oldTask.id), 'Existing task was lost in merge mode.');
+            assert(categories.some(category => category.id === currentCategory.id),
+              'Existing category was lost in merge mode.');
+            assert(new Set(categories.map(category => category.id)).size === categories.length,
+              'Merge created duplicate category IDs.');
+            assert(new Set(categoryNameKeys).size === categoryNameKeys.length,
+              'Merge created duplicate category names.');
+
+            const mappedTask = tasks.find(task => task.id === 'import-new-a');
+            const collisionTask = tasks.find(task => task.id === 'import-new-b');
+            const collisionCategory = categories.find(category => category.name === 'Collision-safe category');
+
+            assert(mappedTask?.categoryId === currentCategory.id,
+              'Case-insensitive category name was not mapped to the existing category.');
+            assert(collisionCategory && collisionCategory.id !== currentCategory.id,
+              'Incoming category ID collision was not regenerated.');
+            assert(collisionTask?.categoryId === collisionCategory.id,
+              'Task was not mapped to regenerated category ID.');
+
+            output.className = 'ok';
+            output.textContent = 'Merge preserves current tasks/categories and handles duplicate IDs/names: PASS';
+          } catch (error) {
+            output.className = 'fail';
+            output.textContent = `FAIL: ${error.message}`;
+          } finally {
+            AuthService.logout();
+            button.disabled = false;
+          }
+        };
+
+        button.addEventListener('click', run);
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>

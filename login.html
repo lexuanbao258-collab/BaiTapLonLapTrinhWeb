@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Đăng nhập TaskFlow - Quản lý công việc cá nhân">
+  <meta name="theme-color" content="#6d5dfc">
+  <title>Đăng nhập | TaskFlow</title>
+  <link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/responsive.css">
+</head>
+<body class="auth-body" data-auth-page="login">
+  <noscript>
+    <div class="noscript">TaskFlow cần trình duyệt hỗ trợ đầy đủ để hoạt động.</div>
+  </noscript>
+  <main class="auth-layout">
+    <section class="auth-showcase">
+      <a class="auth-brand" href="login.html">
+        <img src="assets/img/logo.svg" alt="TaskFlow">
+        <span>
+          <strong>TaskFlow</strong>
+          <small>Không gian quản lý công việc cá nhân</small>
+        </span>
+      </a>
+      <div class="auth-showcase-content">
+        <span class="auth-pill">Quản lý công việc thông minh</span>
+        <h1>Mỗi ngày rõ ràng hơn.<br>Mỗi mục tiêu gần hơn.</h1>
+        <p>
+          Lập kế hoạch, quản lý deadline và theo dõi tiến độ trong một không
+          gian cá nhân gọn gàng.
+        </p>
+        <div class="auth-feature-grid">
+          <article>
+            <span>01</span>
+            <div>
+              <strong>Không gian riêng</strong>
+              <small>Mỗi tài khoản có danh sách công việc, danh mục và thiết lập riêng biệt.</small>
+            </div>
+          </article>
+          <article>
+            <span>02</span>
+            <div>
+              <strong>Quản lý toàn diện</strong>
+              <small>Lập kế hoạch, theo dõi tiến độ và sắp xếp công việc dễ dàng tại một nơi.</small>
+            </div>
+          </article>
+          <article>
+            <span>03</span>
+            <div>
+              <strong>Luôn sẵn sàng</strong>
+              <small>Dữ liệu được duy trì ổn định để bạn tiếp tục công việc bất cứ lúc nào.</small>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="auth-preview" aria-hidden="true">
+        <div class="preview-top">
+          <i></i><i></i><i></i>
+          <span>taskflow.app/dashboard</span>
+        </div>
+        <div class="preview-body">
+          <div class="preview-side"></div>
+          <div class="preview-main">
+            <div class="preview-title"></div>
+            <div class="preview-cards"><i></i><i></i><i></i></div>
+            <div class="preview-chart"></div>
+          </div>
+        </div>
+      </div>
+      <p class="auth-copyright">© 2026 TaskFlow. Quản lý công việc rõ ràng hơn mỗi ngày.</p>
+    </section>
+
+    <section class="auth-form-side">
+      <div class="auth-form-wrap">
+        <div class="auth-mobile-brand">
+          <img src="assets/img/logo.svg" alt="TaskFlow">
+          <strong>TaskFlow</strong>
+        </div>
+        <header class="auth-form-header">
+          <span class="eyebrow">TaskFlow</span>
+          <h2>Chào mừng bạn trở lại</h2>
+          <p>Đăng nhập để tiếp tục quản lý công việc và kế hoạch của bạn.</p>
+        </header>
+        <div
+          id="authNotice"
+          class="auth-notice"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></div>
+        <form id="loginForm" class="auth-form" novalidate>
+          <div class="form-field">
+            <label for="loginEmail">Email <em>*</em></label>
+            <div class="auth-input-wrap">
+              <span data-auth-icon="mail"></span>
+              <input
+                id="loginEmail"
+                class="field-control"
+                name="email"
+                type="email"
+                autocomplete="email"
+                placeholder="bao@example.com"
+                aria-describedby="loginEmailError"
+              >
+              <span class="auth-field-state"></span>
+            </div>
+            <small
+              class="field-error"
+              id="loginEmailError"
+              data-error="email"
+              aria-live="polite"
+            ></small>
+          </div>
+          <div class="form-field">
+            <div class="label-row">
+              <label for="loginPassword">Mật khẩu <em>*</em></label>
+              <button
+                type="button"
+                class="text-button"
+                id="openForgot"
+                aria-controls="forgotModal"
+                aria-expanded="false"
+              >
+                Quên mật khẩu?
+              </button>
+            </div>
+            <div class="auth-input-wrap">
+              <span data-auth-icon="lock"></span>
+              <input
+                id="loginPassword"
+                class="field-control"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                placeholder="Ít nhất 6 ký tự"
+                aria-describedby="loginPasswordError"
+              >
+              <button
+                class="password-toggle"
+                type="button"
+                data-toggle-password="loginPassword"
+                aria-label="Hiện mật khẩu"
+              ></button>
+            </div>
+            <small
+              class="field-error"
+              id="loginPasswordError"
+              data-error="password"
+              aria-live="polite"
+            ></small>
+          </div>
+          <div class="auth-options">
+            <label class="check-label">
+              <input id="rememberMe" name="remember" type="checkbox">
+              <span></span>
+              Ghi nhớ đăng nhập
+            </label>
+            <small>Dữ liệu được lưu trên trình duyệt này</small>
+          </div>
+          <div
+            class="form-general-error"
+            data-error="general"
+            role="alert"
+            aria-live="polite"
+          ></div>
+          <button class="btn btn-primary auth-submit" type="submit">
+            <span>Đăng nhập</span>
+            <i class="button-loader"></i>
+          </button>
+        </form>
+        <div class="auth-divider"><span>hoặc khám phá TaskFlow trước</span></div>
+        <button class="demo-login" id="demoLogin" type="button">
+          <span class="demo-avatar">TF</span>
+          <span>
+            <strong>Không gian trải nghiệm</strong>
+            <small>Khám phá TaskFlow với các công việc mẫu.</small>
+          </span>
+          <span class="demo-arrow"></span>
+        </button>
+        <p class="auth-switch">Chưa có tài khoản? <a id="registerLink" href="register.html">Đăng ký miễn phí</a></p>
+        <div class="auth-security-note">
+          <span data-auth-icon="shield"></span>
+          <p>
+            Dữ liệu tài khoản được duy trì trên thiết bị này. Tránh sử dụng
+            thông tin nhạy cảm.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div
+    class="auth-modal"
+    id="forgotModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="forgotModalTitle"
+    aria-describedby="forgotModalDescription"
+    aria-hidden="true"
+    hidden
+  >
+    <div class="auth-modal-card">
+      <button
+        class="auth-modal-close"
+        id="closeForgot"
+        type="button"
+        aria-label="Đóng"
+      ></button>
+      <div class="auth-modal-icon" data-auth-icon="key"></div>
+      <h2 id="forgotModalTitle">Đặt lại mật khẩu</h2>
+      <p id="forgotModalDescription">
+        Nhập email đã đăng ký để đặt mật khẩu mới.
+      </p>
+      <form id="forgotForm" class="auth-form" novalidate>
+        <div class="form-field">
+          <label for="forgotEmail">Email</label>
+          <input
+            id="forgotEmail"
+            class="field-control"
+            name="email"
+            type="email"
+            autocomplete="email"
+            placeholder="bao@example.com"
+            aria-describedby="forgotEmailError"
+          >
+          <small class="field-error" id="forgotEmailError"
+            data-forgot-error="email" aria-live="polite"></small>
+        </div>
+        <div class="form-field">
+          <label for="forgotPassword">Mật khẩu mới</label>
+          <input
+            id="forgotPassword"
+            class="field-control"
+            name="newPassword"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            maxlength="64"
+            placeholder="Ít nhất 6 ký tự"
+            aria-describedby="forgotPasswordError"
+          >
+          <small class="field-error" id="forgotPasswordError"
+            data-forgot-error="newPassword" aria-live="polite"></small>
+        </div>
+        <div class="form-field">
+          <label for="forgotConfirm">Nhập lại mật khẩu</label>
+          <input
+            id="forgotConfirm"
+            class="field-control"
+            name="confirmPassword"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            maxlength="64"
+            placeholder="Nhập lại mật khẩu"
+            aria-describedby="forgotConfirmError"
+          >
+          <small class="field-error" id="forgotConfirmError"
+            data-forgot-error="confirmPassword" aria-live="polite"></small>
+        </div>
+        <button class="btn btn-primary auth-submit" type="submit">Cập nhật mật khẩu</button>
+      </form>
+    </div>
+  </div>
+
+<script src="assets/js/core/config.js"></script>
+<script src="assets/js/components/icons.js"></script>
+<script src="assets/js/core/utils.js"></script>
+<script src="assets/js/core/storage.js"></script>
+<script src="assets/js/core/validators.js"></script>
+<script src="assets/js/services/auth-service.js"></script>
+<script src="assets/js/pages/auth-page.js"></script>
+</body>
+</html>

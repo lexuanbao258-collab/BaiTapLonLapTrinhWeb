@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow theme bootstrap check</title>
+    <style>html,body{margin:0;overflow:hidden}</style>
+  </head>
+  <body>
+    <pre id="result">Đang kiểm tra…</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const frame = document.createElement('iframe');
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+        const loadKanban = () => new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            reject(new Error('Kanban tải quá lâu.'));
+          }, 5000);
+
+          frame.onload = () => {
+            window.setTimeout(() => {
+              window.clearTimeout(timeout);
+              resolve(frame.contentDocument);
+            }, 250);
+          };
+          frame.src = '../kanban.html?themeBootstrapCheck=1';
+        });
+
+        const run = async () => {
+          try {
+            const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+            const email = `theme-check-${token}@taskflow.test`;
+
+            frame.setAttribute('aria-hidden', 'true');
+            frame.style.cssText =
+              'position:fixed;inset:0;width:100vw;height:100vh;border:0;visibility:hidden;pointer-events:none;';
+            document.body.appendChild(frame);
+            AuthService.logout();
+
+            const registration = AuthService.register({
+              fullName: 'Theme Bootstrap Check',
+              email,
+              password: '123456',
+              confirmPassword: '123456',
+              acceptTerms: true
+            });
+
+            assert(registration.ok, 'Không thể tạo tài khoản kiểm tra.');
+            assert(AuthService.login({ email, password: '123456', remember: true }).ok,
+              'Không thể đăng nhập tài khoản kiểm tra.');
+            assert(WorkspaceService.ensureUserWorkspace(),
+              'Không thể khởi tạo không gian kiểm tra.');
+            assert(SettingsService.saveSettings({
+              theme: 'dark',
+              accent: '#0ea5e9'
+            }), 'Không thể lưu giao diện tối để kiểm tra.');
+
+            const doc = await loadKanban();
+            const headNodes = [...doc.head.children];
+            const bootstrapScript = doc.head.querySelector(
+              'script[src="assets/js/core/theme-bootstrap.js"]'
+            );
+            const stylesheet = doc.head.querySelector(
+              'link[href="assets/css/style.css"]'
+            );
+
+            assert(bootstrapScript && stylesheet &&
+              headNodes.indexOf(bootstrapScript) < headNodes.indexOf(stylesheet),
+            'Khởi tạo giao diện không được đặt trước stylesheet.');
+            assert(doc.documentElement.dataset.theme === 'dark',
+              'Kanban không áp dụng giao diện tối đã lưu.');
+            assert(getComputedStyle(doc.body).backgroundColor === 'rgb(12, 17, 27)',
+              'Nền Kanban không dùng màu tối đã lưu.');
+            const aboutLink = doc.querySelector(
+              '.sidebar-bottom a[href="about.html"]'
+            );
+
+            aboutLink?.dispatchEvent(new Event('pointerenter'));
+            assert([...doc.head.querySelectorAll('link[rel="prefetch"]')].some(hint => {
+              return new URL(hint.href).pathname.endsWith('/about.html');
+            }), 'Điều hướng chưa tạo hint tải trước trang đích.');
+            const pageContent = doc.querySelector('#pageContent');
+            const contentStyle = pageContent ? getComputedStyle(pageContent) : null;
+
+            assert(contentStyle?.opacity === '1' && contentStyle.animationName === 'none',
+              'Vùng nội dung vẫn bị ẩn hoặc làm mờ khi trang mở.');
+            assert(!doc.querySelector('.navigation-curtain') &&
+              !doc.body.classList.contains('page-leaving'),
+            'Trang vẫn dùng lớp che khi chuyển điều hướng.');
+            assert(AuthService.deleteAccount('123456').ok,
+              'Không thể dọn tài khoản kiểm tra.');
+
+            output.textContent = 'PASS: giao diện Kanban hiển thị ngay, không che nội dung khi điều hướng.';
+          } catch (error) {
+            output.textContent = `FAIL: ${error.message}`;
+          } finally {
+            frame.remove();
+            AuthService.logout();
+          }
+        };
+
+        if (new URLSearchParams(location.search).get('run') === '1') {
+          run();
+        }
+      })();
+    </script>
+  </body>
+</html>
