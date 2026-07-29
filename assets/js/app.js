@@ -128,6 +128,38 @@ const App = (() => {
     }
   };
 
+  const renderUserAvatar = (node, user, initials) => {
+    const avatarImage = String(user.avatarImage || '').trim();
+
+    node.style.setProperty('--avatar-color', safeHexColor(user.avatarColor));
+
+    if (!avatarImage) {
+      node.classList.remove('has-avatar-image');
+      node.textContent = initials;
+      return;
+    }
+
+    const image = document.createElement('img');
+
+    image.className = 'avatar-image';
+    image.src = avatarImage;
+    image.alt = '';
+    image.decoding = 'async';
+    image.addEventListener('error', () => {
+      if (!node.contains(image)) {
+        return;
+      }
+
+      node.classList.remove('has-avatar-image');
+      node.textContent = initials;
+    }, {
+      once: true
+    });
+
+    node.classList.add('has-avatar-image');
+    node.replaceChildren(image);
+  };
+
   const updateUserInfo = () => {
     const user = AuthService.getCurrentUser();
 
@@ -137,17 +169,12 @@ const App = (() => {
     }
 
     const initials = AuthService.initials(user);
-    const role = user.role || 'Người dùng TaskFlow';
 
     document.querySelectorAll('[data-current-user-initials]').forEach(node => {
-      node.textContent = initials;
-      node.style.setProperty('--avatar-color', safeHexColor(user.avatarColor));
+      renderUserAvatar(node, user, initials);
     });
     document.querySelectorAll('[data-current-user-name]').forEach(node => {
       node.textContent = AuthService.publicName(user);
-    });
-    document.querySelectorAll('[data-current-user-role]').forEach(node => {
-      node.textContent = role;
     });
     document.querySelectorAll('[data-current-user-email]').forEach(node => {
       node.textContent = AuthService.publicEmail(user);
@@ -639,6 +666,7 @@ const App = (() => {
     window.addEventListener('taskflow:data-changed', () => {
       updateSharedTaskIndicators();
     });
+    window.addEventListener('taskflow:profile-updated', updateUserInfo);
 
     window.addEventListener('pageshow', () => {
       const activeUser = AuthService.getCurrentUser();
@@ -686,6 +714,7 @@ const App = (() => {
     applySettings,
     applyAccentColor,
     renderIcons,
-    updateNavCounts
+    updateNavCounts,
+    updateUserInfo
   };
 })();

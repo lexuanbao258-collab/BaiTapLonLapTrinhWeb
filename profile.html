@@ -147,7 +147,7 @@
             <span class="avatar" data-current-user-initials>TF</span>
             <span>
               <strong data-current-user-name>Người dùng</strong>
-              <small data-current-user-role>Người dùng TaskFlow</small>
+              <small>Không gian cá nhân</small>
             </span>
             <i class="profile-chevron" data-icon="chevronDown" data-icon-size="15"></i>
           </button>
@@ -176,9 +176,66 @@
         <div id="pageContent" class="page-content">
           <section class="profile-layout" aria-label="Thông tin hồ sơ">
             <aside class="panel profile-summary">
-              <div class="profile-avatar-large" id="profileAvatar">TF</div>
+              <div class="profile-avatar-control" id="profileAvatarControl">
+                <button
+                  class="profile-avatar-trigger"
+                  id="profileAvatarTrigger"
+                  type="button"
+                  aria-label="Mở menu ảnh đại diện"
+                  aria-haspopup="menu"
+                  aria-controls="avatarMenu"
+                  aria-expanded="false"
+                >
+                  <span class="profile-avatar-large" id="profileAvatar" aria-hidden="true">TF</span>
+                  <span class="profile-avatar-overlay" aria-hidden="true">
+                    <i data-icon="camera" data-icon-size="17"></i>
+                    <span>Đổi ảnh</span>
+                  </span>
+                </button>
+                <div
+                  class="avatar-menu"
+                  id="avatarMenu"
+                  role="menu"
+                  aria-label="Tùy chọn ảnh đại diện"
+                  hidden
+                >
+                  <button id="chooseAvatarImage" type="button" role="menuitem">
+                    <i data-icon="camera" data-icon-size="18"></i>
+                    <span>
+                      <strong>Chọn ảnh đại diện</strong>
+                      <small>JPG, PNG hoặc WebP</small>
+                    </span>
+                  </button>
+                  <button id="viewAvatarImage" type="button" role="menuitem">
+                    <i data-icon="eye" data-icon-size="18"></i>
+                    <span>
+                      <strong>Xem ảnh đại diện</strong>
+                      <small>Mở ảnh kích thước lớn</small>
+                    </span>
+                  </button>
+                  <button
+                    class="danger"
+                    id="deleteAvatarImage"
+                    type="button"
+                    role="menuitem"
+                    hidden
+                  >
+                    <i data-icon="trash" data-icon-size="18"></i>
+                    <span>
+                      <strong>Xóa ảnh đại diện</strong>
+                      <small>Quay về avatar chữ viết tắt</small>
+                    </span>
+                  </button>
+                </div>
+                <input
+                  id="avatarFileInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  aria-label="Chọn tệp ảnh đại diện"
+                  hidden
+                >
+              </div>
               <h2 id="profileDisplayName">Người dùng TaskFlow</h2>
-              <p id="profileDisplayRole">Người dùng TaskFlow</p>
 
               <div class="profile-meta-list">
                 <div>
@@ -186,13 +243,6 @@
                   <p>
                     <strong>Email đăng nhập</strong>
                     <small id="profileDisplayEmail">email@example.com</small>
-                  </p>
-                </div>
-                <div>
-                  <span><i data-icon="school" data-icon-size="16"></i></span>
-                  <p>
-                    <strong>Trường/đơn vị</strong>
-                    <small id="profileDisplaySchool">Chưa cập nhật</small>
                   </p>
                 </div>
                 <div>
@@ -246,18 +296,6 @@
                           aria-describedby="profileEmailError" readonly aria-readonly="true">
                         <small class="field-error" id="profileEmailError"
                           data-profile-error="email" aria-live="polite"></small>
-                      </div>
-
-                      <div class="form-field">
-                        <label for="profileRole">Vai trò</label>
-                        <input class="field-control" id="profileRole" name="role"
-                          type="text" placeholder="Ví dụ: Quản lý dự án" readonly aria-readonly="true">
-                      </div>
-
-                      <div class="form-field">
-                        <label for="profileSchool">Tổ chức</label>
-                        <input class="field-control" id="profileSchool" name="school"
-                          type="text" placeholder="Công ty hoặc nhóm của bạn" readonly aria-readonly="true">
                       </div>
 
                       <div class="form-field span-2">
@@ -786,6 +824,91 @@
           data-delete-password-close>Hủy</button>
         <button class="btn btn-danger" id="deletePasswordConfirm" type="button">
           Xóa vĩnh viễn
+        </button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Modal xem trước ảnh đại diện trước khi lưu -->
+  <div class="modal-overlay" id="avatarPreviewModal" hidden aria-hidden="true">
+    <section
+      class="modal modal-md avatar-preview-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="avatarPreviewModalTitle"
+      aria-describedby="avatarPreviewDescription"
+    >
+      <header class="modal-header">
+        <div>
+          <span class="eyebrow">Ảnh đại diện</span>
+          <h2 id="avatarPreviewModalTitle">Xem trước ảnh mới</h2>
+        </div>
+        <button
+          class="icon-btn modal-close"
+          type="button"
+          data-avatar-preview-close
+          aria-label="Đóng xem trước ảnh đại diện"
+        >
+          <i data-icon="close" data-icon-size="20"></i>
+        </button>
+      </header>
+      <div class="modal-body avatar-preview-body">
+        <img id="avatarPreviewImage" alt="Ảnh đại diện mới đang xem trước">
+        <p id="avatarPreviewDescription">
+          Ảnh đã được cắt vuông ở giữa và thu nhỏ để hiển thị rõ trên mọi thiết bị.
+        </p>
+      </div>
+      <footer class="modal-footer">
+        <button
+          class="btn btn-ghost"
+          id="cancelAvatarPreview"
+          type="button"
+          data-avatar-preview-close
+        >
+          Hủy
+        </button>
+        <button class="btn btn-primary" id="saveAvatarImage" type="button">
+          <i data-icon="check" data-icon-size="17"></i>
+          Lưu ảnh đại diện
+        </button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Modal xem ảnh đại diện kích thước lớn -->
+  <div
+    class="modal-overlay avatar-view-overlay"
+    id="avatarViewModal"
+    hidden
+    aria-hidden="true"
+  >
+    <section
+      class="modal modal-lg avatar-view-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="avatarViewModalTitle"
+    >
+      <header class="modal-header">
+        <div>
+          <span class="eyebrow">Hồ sơ cá nhân</span>
+          <h2 id="avatarViewModalTitle">Ảnh đại diện</h2>
+        </div>
+        <button
+          class="icon-btn modal-close"
+          type="button"
+          data-avatar-view-close
+          aria-label="Đóng ảnh đại diện"
+        >
+          <i data-icon="close" data-icon-size="20"></i>
+        </button>
+      </header>
+      <div class="modal-body avatar-view-body">
+        <img id="avatarViewImage" alt="Ảnh đại diện hiện tại" hidden>
+        <div class="avatar-view-fallback" id="avatarViewFallback" hidden>TF</div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost" type="button" data-avatar-view-close>
+          Đóng
         </button>
       </footer>
     </section>

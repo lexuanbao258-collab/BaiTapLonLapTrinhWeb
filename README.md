@@ -1,6 +1,6 @@
 # TaskFlow – Quản lý công việc cá nhân
 
-Phiên bản **1.6.6** · Bài tập lớn môn Cơ sở lập trình Web.
+Phiên bản **1.7.0** · Bài tập lớn môn Cơ sở lập trình Web.
 
 TaskFlow là ứng dụng quản lý công việc chạy hoàn toàn trên trình duyệt bằng HTML, CSS và JavaScript ES6+. Dữ liệu được lưu cục bộ bằng LocalStorage; project không dùng framework, backend, database hoặc CDN bên ngoài.
 
@@ -11,7 +11,7 @@ TaskFlow là ứng dụng quản lý công việc chạy hoàn toàn trên trìn
 - CRUD công việc, đánh dấu hoàn thành, ghim, nhân bản, checklist, nhãn và ghi chú.
 - Tìm kiếm theo tiêu đề/mô tả, lọc, sắp xếp và phân trang.
 - Dashboard, Statistics (Canvas), Kanban kéo thả, Calendar và Categories.
-- Profile, dark/light mode, accent color, compact mode và responsive mobile/tablet/desktop.
+- Profile có đổi/xem/xóa ảnh đại diện, dark/light mode, accent color, compact mode và responsive mobile/tablet/desktop.
 - Trang **Công việc** hỗ trợ xuất CSV và nhập CSV theo chế độ gộp hoặc ghi đè.
 - Trang **Cài đặt & dữ liệu** hỗ trợ xuất/nhập JSON, backup/restore và Clear All có xác nhận.
 - Toast, modal có quản lý focus, validation realtime, PWA/Service Worker và hoạt động offline cho tài nguyên đã cache.
@@ -109,7 +109,7 @@ Khi phát hiện dữ liệu workspace cũ chưa có hậu tố người dùng, 
 
 ## PWA và xóa cache khi phát triển
 
-`service-worker.js` đang dùng cache `taskflow-v1.6.6`. HTML, CSS, JavaScript, manifest và Service Worker được kiểm tra network-first để cache cũ không giữ mã nguồn cũ sau refactor.
+`service-worker.js` đang dùng cache `taskflow-v1.7.0`. HTML, CSS, JavaScript, manifest và Service Worker được kiểm tra network-first để cache cũ không giữ mã nguồn cũ sau refactor.
 
 Khi phát triển và cần xóa cache:
 
@@ -129,6 +129,7 @@ Các trang trong `tests/` hỗ trợ thêm kiểm tra hồi quy qua query `?run=
 - `tests/csv-service-check.html?run=1`
 - `tests/backup-merge-check.html?run=1`
 - `tests/legacy-migration-check.html?run=1`
+- `tests/profile-interaction-check.html?run=1`
 - `tests/pwa-cache-check.html?run=1`
 - `tests/hidden-visibility-check.html`
 
@@ -141,6 +142,13 @@ Các trang trong `tests/` hỗ trợ thêm kiểm tra hồi quy qua query `?run=
 Chưa có thông tin thành viên, báo cáo hoặc video demo được cung cấp. Bổ sung các thông tin này theo nhóm thực tế trước khi nộp bài.
 
 ## Thay đổi đáng chú ý
+
+### v1.7.0
+
+- Bổ sung chọn, cắt vuông, thu nhỏ, nén, xem trước, xem lớn và xóa ảnh đại diện.
+- Đồng bộ avatar theo đúng tài khoản ở trang hồ sơ, header và profile popover mà không cần reload.
+- Tinh gọn Thông tin cá nhân còn Họ tên, Email, Giới thiệu ngắn và Ảnh đại diện; không còn hiển thị Vai trò/Tổ chức.
+- Mở rộng kiểm thử hồ sơ cho lưu/hủy, email trùng, dữ liệu user cũ, responsive, định dạng/kích thước tệp, lưu bền vững, cách ly tài khoản, modal và xóa ảnh.
 
 ### v1.6.6
 

@@ -17,12 +17,34 @@
   const deletePasswordInput = document.querySelector('#deletePasswordInput');
   const deletePasswordError = document.querySelector('#deletePasswordError');
   const deletePasswordConfirm = document.querySelector('#deletePasswordConfirm');
+  const profileAvatar = document.querySelector('#profileAvatar');
+  const avatarControl = document.querySelector('#profileAvatarControl');
+  const avatarTrigger = document.querySelector('#profileAvatarTrigger');
+  const avatarMenu = document.querySelector('#avatarMenu');
+  const avatarFileInput = document.querySelector('#avatarFileInput');
+  const chooseAvatarButton = document.querySelector('#chooseAvatarImage');
+  const viewAvatarButton = document.querySelector('#viewAvatarImage');
+  const deleteAvatarButton = document.querySelector('#deleteAvatarImage');
+  const avatarPreviewModal = document.querySelector('#avatarPreviewModal');
+  const avatarPreviewImage = document.querySelector('#avatarPreviewImage');
+  const saveAvatarButton = document.querySelector('#saveAvatarImage');
+  const avatarViewModal = document.querySelector('#avatarViewModal');
+  const avatarViewImage = document.querySelector('#avatarViewImage');
+  const avatarViewFallback = document.querySelector('#avatarViewFallback');
+  const ACCEPTED_AVATAR_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp'
+  ]);
+  const MAX_AVATAR_FILE_SIZE = 5 * 1024 * 1024;
+  const MAX_AVATAR_DIMENSION = 512;
 
   let selectedColor = CONFIG.DEFAULT_ACCENT;
   let isProfileEditing = false;
   let changePasswordModalTrigger = null;
   let deleteModalTrigger = null;
   let deletePasswordResolver = null;
+  let pendingAvatarImage = '';
 
   const safeAvatarColor = color => {
     return /^#[0-9a-fA-F]{6}$/.test(String(color || '')) ?
@@ -36,6 +58,348 @@
     if (element) {
       element.textContent = String(value ?? '');
     }
+  };
+
+  const updateAvatarMenuState = user => {
+    if (!deleteAvatarButton) {
+      return;
+    }
+
+    deleteAvatarButton.hidden = !String(user?.avatarImage || '').trim();
+  };
+
+  const showAvatarFallback = (target, user) => {
+    if (!target) {
+      return;
+    }
+
+    target.classList.remove('has-avatar-image');
+    target.style.setProperty('--avatar-color', safeAvatarColor(user?.avatarColor));
+    target.textContent = AuthService.initials(user);
+  };
+
+  const renderProfileAvatar = user => {
+    if (!profileAvatar || !user) {
+      return;
+    }
+
+    const avatarImage = String(user.avatarImage || '').trim();
+
+    profileAvatar.style.setProperty(
+      '--avatar-color',
+      safeAvatarColor(user.avatarColor)
+    );
+    updateAvatarMenuState(user);
+
+    if (!avatarImage) {
+      showAvatarFallback(profileAvatar, user);
+      return;
+    }
+
+    const image = document.createElement('img');
+
+    image.className = 'avatar-image';
+    image.src = avatarImage;
+    image.alt = '';
+    image.decoding = 'async';
+    image.draggable = false;
+    image.addEventListener('error', () => {
+      if (profileAvatar.contains(image)) {
+        showAvatarFallback(profileAvatar, user);
+      }
+    }, {
+      once: true
+    });
+
+    profileAvatar.classList.add('has-avatar-image');
+    profileAvatar.replaceChildren(image);
+  };
+
+  const visibleAvatarMenuItems = () => {
+    return Array.from(
+      avatarMenu?.querySelectorAll('[role="menuitem"]:not([hidden])') || []
+    );
+  };
+
+  const closeAvatarMenu = (restoreFocus = false) => {
+    if (!avatarMenu || avatarMenu.hidden) {
+      return;
+    }
+
+    avatarMenu.hidden = true;
+    avatarTrigger?.setAttribute('aria-expanded', 'false');
+
+    if (restoreFocus) {
+      avatarTrigger?.focus({
+        preventScroll: true
+      });
+    }
+  };
+
+  const openAvatarMenu = () => {
+    if (!avatarMenu || !avatarTrigger) {
+      return;
+    }
+
+    updateAvatarMenuState(AuthService.getCurrentUser());
+    avatarMenu.hidden = false;
+    avatarTrigger.setAttribute('aria-expanded', 'true');
+
+    requestAnimationFrame(() => {
+      visibleAvatarMenuItems()[0]?.focus({
+        preventScroll: true
+      });
+    });
+  };
+
+  const toggleAvatarMenu = () => {
+    if (avatarMenu?.hidden) {
+      openAvatarMenu();
+    } else {
+      closeAvatarMenu(true);
+    }
+  };
+
+  const readAvatarFile = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.addEventListener('load', () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('Không thể đọc tệp ảnh đã chọn.'));
+        return;
+      }
+
+      resolve(reader.result);
+    }, {
+      once: true
+    });
+    reader.addEventListener('error', () => {
+      reject(new Error('Không thể đọc tệp ảnh đã chọn.'));
+    }, {
+      once: true
+    });
+    reader.readAsDataURL(file);
+  });
+
+  const loadAvatarImage = source => new Promise((resolve, reject) => {
+    const image = new Image();
+
+    image.addEventListener('load', () => {
+      if (!image.naturalWidth || !image.naturalHeight) {
+        reject(new Error('Tệp đã chọn không chứa ảnh hợp lệ.'));
+        return;
+      }
+
+      resolve(image);
+    }, {
+      once: true
+    });
+    image.addEventListener('error', () => {
+      reject(new Error('Tệp đã chọn không chứa ảnh hợp lệ.'));
+    }, {
+      once: true
+    });
+    image.src = source;
+  });
+
+  const encodeAvatarCanvas = canvas => {
+    try {
+      const webp = canvas.toDataURL('image/webp', 0.82);
+
+      if (webp.startsWith('data:image/webp')) {
+        return webp;
+      }
+    } catch {
+      // Trình duyệt cũ có thể không hỗ trợ xuất WebP.
+    }
+
+    const jpegCanvas = document.createElement('canvas');
+    const context = jpegCanvas.getContext('2d');
+
+    jpegCanvas.width = canvas.width;
+    jpegCanvas.height = canvas.height;
+
+    if (!context) {
+      throw new Error('Trình duyệt không thể xử lý ảnh đại diện.');
+    }
+
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, jpegCanvas.width, jpegCanvas.height);
+    context.drawImage(canvas, 0, 0);
+
+    return jpegCanvas.toDataURL('image/jpeg', 0.82);
+  };
+
+  const processAvatarFile = async file => {
+    if (!ACCEPTED_AVATAR_TYPES.has(String(file?.type || '').toLowerCase())) {
+      throw new Error('Vui lòng chọn ảnh JPG, PNG hoặc WebP.');
+    }
+
+    if (file.size > MAX_AVATAR_FILE_SIZE) {
+      throw new Error('Ảnh đại diện không được lớn hơn 5 MB.');
+    }
+
+    const source = await readAvatarFile(file);
+    const image = await loadAvatarImage(source);
+    const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+    const targetSize = Math.min(
+      MAX_AVATAR_DIMENSION,
+      Math.floor(sourceSize)
+    );
+    const sourceX = Math.floor((image.naturalWidth - sourceSize) / 2);
+    const sourceY = Math.floor((image.naturalHeight - sourceSize) / 2);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context || targetSize < 1) {
+      throw new Error('Trình duyệt không thể xử lý ảnh đại diện.');
+    }
+
+    canvas.width = targetSize;
+    canvas.height = targetSize;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceSize,
+      sourceSize,
+      0,
+      0,
+      targetSize,
+      targetSize
+    );
+
+    return encodeAvatarCanvas(canvas);
+  };
+
+  const resetAvatarPreview = () => {
+    pendingAvatarImage = '';
+    avatarPreviewImage?.removeAttribute('src');
+
+    if (saveAvatarButton) {
+      saveAvatarButton.disabled = false;
+    }
+  };
+
+  const openAvatarPreview = avatarImage => {
+    pendingAvatarImage = avatarImage;
+    avatarPreviewImage.src = avatarImage;
+    avatarPreviewModal.taskFlowReset = resetAvatarPreview;
+    avatarTrigger.focus({
+      preventScroll: true
+    });
+    Modal.showFrame(avatarPreviewModal);
+  };
+
+  const showAvatarViewFallback = user => {
+    avatarViewImage.hidden = true;
+    avatarViewImage.removeAttribute('src');
+    avatarViewFallback.hidden = false;
+    avatarViewFallback.textContent = AuthService.initials(user);
+    avatarViewFallback.style.setProperty(
+      '--avatar-color',
+      safeAvatarColor(user?.avatarColor)
+    );
+  };
+
+  const resetAvatarView = () => {
+    avatarViewImage?.removeAttribute('src');
+
+    if (avatarViewImage) {
+      avatarViewImage.hidden = true;
+    }
+
+    if (avatarViewFallback) {
+      avatarViewFallback.hidden = true;
+    }
+  };
+
+  const openAvatarView = () => {
+    const user = AuthService.getCurrentUser();
+
+    if (!user) {
+      location.replace('login.html');
+      return;
+    }
+
+    const avatarImage = String(user.avatarImage || '').trim();
+
+    closeAvatarMenu(false);
+    avatarTrigger.focus({
+      preventScroll: true
+    });
+
+    if (avatarImage) {
+      avatarViewFallback.hidden = true;
+      avatarViewImage.src = avatarImage;
+      avatarViewImage.hidden = false;
+    } else {
+      showAvatarViewFallback(user);
+    }
+
+    avatarViewModal.taskFlowReset = resetAvatarView;
+    Modal.showFrame(avatarViewModal);
+  };
+
+  const savePendingAvatar = () => {
+    if (!pendingAvatarImage || saveAvatarButton.disabled) {
+      return;
+    }
+
+    saveAvatarButton.disabled = true;
+
+    const result = AuthService.updateProfile({
+      avatarImage: pendingAvatarImage
+    });
+
+    if (!result.ok) {
+      saveAvatarButton.disabled = false;
+      UI.toast(UI.mutationErrorMessage(result), 'error');
+      return;
+    }
+
+    renderProfileAvatar(result.data);
+    Modal.close(avatarPreviewModal);
+    UI.toast('Đã cập nhật ảnh đại diện.');
+  };
+
+  const deleteCurrentAvatar = async () => {
+    const user = AuthService.getCurrentUser();
+
+    closeAvatarMenu(false);
+    avatarTrigger.focus({
+      preventScroll: true
+    });
+
+    if (!user?.avatarImage) {
+      updateAvatarMenuState(user);
+      return;
+    }
+
+    const approved = await UI.confirm({
+      title: 'Xóa ảnh đại diện?',
+      message: 'Ảnh đã tải lên sẽ bị xóa. Hồ sơ của bạn sẽ quay về avatar chữ viết tắt và màu hiện tại.',
+      confirmText: 'Xóa ảnh',
+      type: 'danger'
+    });
+
+    if (!approved) {
+      return;
+    }
+
+    const result = AuthService.updateProfile({
+      avatarImage: ''
+    });
+
+    if (!result.ok) {
+      UI.toast(UI.mutationErrorMessage(result), 'error');
+      return;
+    }
+
+    renderProfileAvatar(result.data);
+    UI.toast('Đã xóa ảnh đại diện.');
   };
 
   const updateAvatarChoices = () => {
@@ -66,13 +430,11 @@
     const stats = StatisticsService.calculateTaskStats();
 
     selectedColor = safeAvatarColor(user.avatarColor);
-    setText('#profileAvatar', AuthService.initials(user));
+    renderProfileAvatar(user);
     setText('#profileDisplayName', AuthService.publicName(user));
-    setText('#profileDisplayRole', user.role || 'Người dùng TaskFlow');
     const visibleEmail = AuthService.publicEmail(user);
 
     setText('#profileDisplayEmail', visibleEmail);
-    setText('#profileDisplaySchool', user.school || 'Chưa cập nhật');
     setText(
       '#profileJoinDate',
       Utils.formatDate(user.createdAt?.slice(0, 10) || Utils.todayISO())
@@ -85,8 +447,6 @@
 
     profileForm.elements.fullName.value = AuthService.publicName(user);
     profileForm.elements.email.value = visibleEmail;
-    profileForm.elements.role.value = user.role || '';
-    profileForm.elements.school.value = user.school || '';
     profileForm.elements.bio.value = AuthService.publicBio(user);
 
     updateAvatarChoices();
@@ -350,6 +710,130 @@
     });
   };
 
+  const bindAvatarActions = () => {
+    Modal.bindFrame(
+      avatarPreviewModal,
+      '[data-avatar-preview-close]'
+    );
+    Modal.bindFrame(
+      avatarViewModal,
+      '[data-avatar-view-close]'
+    );
+
+    avatarTrigger.addEventListener('click', toggleAvatarMenu);
+    avatarTrigger.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+        return;
+      }
+
+      event.preventDefault();
+      openAvatarMenu();
+
+      if (event.key === 'ArrowUp') {
+        requestAnimationFrame(() => {
+          const items = visibleAvatarMenuItems();
+
+          items[items.length - 1]?.focus({
+            preventScroll: true
+          });
+        });
+      }
+    });
+
+    avatarMenu.addEventListener('keydown', event => {
+      const items = visibleAvatarMenuItems();
+      const currentIndex = items.indexOf(document.activeElement);
+      let nextIndex = -1;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeAvatarMenu(true);
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        nextIndex = (currentIndex + 1) % items.length;
+      } else if (event.key === 'ArrowUp') {
+        nextIndex = (currentIndex - 1 + items.length) % items.length;
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = items.length - 1;
+      }
+
+      if (nextIndex >= 0) {
+        event.preventDefault();
+        items[nextIndex]?.focus({
+          preventScroll: true
+        });
+      }
+    });
+
+    chooseAvatarButton.addEventListener('click', () => {
+      closeAvatarMenu(false);
+      avatarTrigger.focus({
+        preventScroll: true
+      });
+      avatarFileInput.click();
+    });
+
+    avatarFileInput.addEventListener('change', async () => {
+      const file = avatarFileInput.files?.[0];
+
+      avatarFileInput.value = '';
+
+      if (!file) {
+        return;
+      }
+
+      avatarFileInput.disabled = true;
+
+      try {
+        const avatarImage = await processAvatarFile(file);
+
+        openAvatarPreview(avatarImage);
+      } catch (error) {
+        UI.toast(
+          error instanceof Error ?
+            error.message :
+            'Không thể xử lý ảnh đại diện đã chọn.',
+          'error'
+        );
+      } finally {
+        avatarFileInput.disabled = false;
+      }
+    });
+
+    viewAvatarButton.addEventListener('click', openAvatarView);
+    deleteAvatarButton.addEventListener('click', deleteCurrentAvatar);
+    saveAvatarButton.addEventListener('click', savePendingAvatar);
+    avatarViewImage.addEventListener('error', () => {
+      const user = AuthService.getCurrentUser();
+
+      if (user && !avatarViewModal.hidden) {
+        showAvatarViewFallback(user);
+      }
+    });
+
+    document.addEventListener('pointerdown', event => {
+      if (
+        !avatarMenu.hidden &&
+        event.target instanceof Node &&
+        !avatarControl.contains(event.target)
+      ) {
+        closeAvatarMenu(false);
+      }
+    });
+    avatarControl.addEventListener('focusout', () => {
+      requestAnimationFrame(() => {
+        if (!avatarControl.contains(document.activeElement)) {
+          closeAvatarMenu(false);
+        }
+      });
+    });
+  };
+
   const bindProfileForm = () => {
     editProfileButton.addEventListener('click', startProfileEdit);
     cancelProfileEditButton.addEventListener('click', cancelProfileEdit);
@@ -371,10 +855,9 @@
       const result = AuthService.updateProfile({
         fullName: profileForm.elements.fullName.value,
         email: profileForm.elements.email.value,
-        role: profileForm.elements.role.value,
-        school: profileForm.elements.school.value,
         bio: profileForm.elements.bio.value,
-        avatarColor: selectedColor
+        avatarColor: selectedColor,
+        avatarImage: AuthService.getCurrentUser()?.avatarImage || ''
       });
 
       if (!result.ok) {
@@ -502,7 +985,11 @@
 
   if (!profileForm || !passwordForm || !avatarColors || !editProfileButton ||
     !profileFormActions || !cancelProfileEditButton || !changePasswordModal ||
-    !openChangePasswordButton) {
+    !openChangePasswordButton || !profileAvatar || !avatarControl ||
+    !avatarTrigger || !avatarMenu || !avatarFileInput || !chooseAvatarButton ||
+    !viewAvatarButton || !deleteAvatarButton || !avatarPreviewModal ||
+    !avatarPreviewImage || !saveAvatarButton || !avatarViewModal ||
+    !avatarViewImage || !avatarViewFallback) {
     console.error('Trang hồ sơ thiếu các phần tử HTML bắt buộc.');
     return;
   }
@@ -516,7 +1003,16 @@
   bindPasswordForm();
   bindChangePasswordModal();
   bindDeleteModal();
+  bindAvatarActions();
   bindActions();
+
+  window.addEventListener('taskflow:profile-updated', event => {
+    const user = event.detail?.user || AuthService.getCurrentUser();
+
+    if (user) {
+      renderProfileAvatar(user);
+    }
+  });
 
   window.addEventListener('taskflow:data-changed', () => {
     const stats = StatisticsService.calculateTaskStats();

@@ -26,6 +26,10 @@
       (() => {
         const output = document.querySelector('#result');
         const frame = document.createElement('iframe');
+        const searchParams = new URLSearchParams(location.search);
+        const requestedWidth = Number.parseInt(searchParams.get('width') || '', 10);
+        const frameWidth = Number.isFinite(requestedWidth) && requestedWidth >= 320 ?
+          `${requestedWidth}px` : '100vw';
         const wait = milliseconds => new Promise(resolve => {
           window.setTimeout(resolve, milliseconds);
         });
@@ -34,11 +38,30 @@
             throw new Error(message);
           }
         };
-        const createTestAccount = () => {
+        const waitFor = async (predicate, message, timeout = 5000) => {
+          const deadline = Date.now() + timeout;
+
+          while (Date.now() < deadline) {
+            if (predicate()) {
+              return;
+            }
+
+            await wait(35);
+          }
+
+          throw new Error(message);
+        };
+
+        let loadSequence = 0;
+        let primaryEmail = '';
+        let secondaryEmail = '';
+        let duplicateEmail = '';
+
+        const createTestAccount = fullName => {
           const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
           const email = `profile-check-${token}@taskflow.test`;
           const registration = AuthService.register({
-            fullName: 'Profile Interaction Check',
+            fullName,
             email,
             password: '123456',
             confirmPassword: '123456',
@@ -46,6 +69,9 @@
           });
 
           assert(registration.ok, 'Không thể tạo tài khoản kiểm tra.');
+          assert(registration.data.avatarImage === '',
+            'Tài khoản mới không có avatarImage mặc định là chuỗi rỗng.');
+
           const login = AuthService.login({
             email,
             password: '123456',
@@ -53,67 +79,609 @@
           });
 
           assert(login.ok, 'Không thể đăng nhập tài khoản kiểm tra.');
-          assert(WorkspaceService.ensureUserWorkspace(), 'Không thể khởi tạo dữ liệu kiểm tra.');
+          assert(WorkspaceService.ensureUserWorkspace(),
+            'Không thể khởi tạo dữ liệu kiểm tra.');
+
           return email;
         };
+
         const loadProfile = () => new Promise((resolve, reject) => {
           const timeout = window.setTimeout(() => {
             reject(new Error('Trang hồ sơ tải quá lâu.'));
-          }, 5000);
+          }, 7000);
 
           frame.onload = () => {
             window.setTimeout(() => {
               window.clearTimeout(timeout);
               resolve(frame.contentDocument);
-            }, 250);
+            }, 300);
           };
-          frame.src = '../profile.html?profileInteractionCheck=1';
+          loadSequence += 1;
+          frame.src = `../profile.html?profileInteractionCheck=${loadSequence}`;
         });
 
-        const run = async () => {
-          let email = '';
+        const createImageFile = (doc, type, name) => new Promise((resolve, reject) => {
+          const canvas = doc.createElement('canvas');
+          const context = canvas.getContext('2d');
 
+          canvas.width = 900;
+          canvas.height = 600;
+
+          if (!context) {
+            reject(new Error('Không thể tạo ảnh kiểm tra.'));
+            return;
+          }
+
+          context.fillStyle = '#ef4444';
+          context.fillRect(0, 0, 300, 600);
+          context.fillStyle = '#10b981';
+          context.fillRect(300, 0, 300, 600);
+          context.fillStyle = '#2563eb';
+          context.fillRect(600, 0, 300, 600);
+          context.fillStyle = '#ffffff';
+          context.font = '700 92px sans-serif';
+          context.textAlign = 'center';
+          context.fillText('TF', 450, 335);
+          canvas.toBlob(blob => {
+            if (!blob) {
+              reject(new Error(`Không thể tạo tệp ${type} kiểm tra.`));
+              return;
+            }
+
+            resolve(new doc.defaultView.File([blob], name, {
+              type
+            }));
+          }, type, .92);
+        });
+
+        const selectAvatarFile = (doc, file) => {
+          const input = doc.querySelector('#avatarFileInput');
+          const View = doc.defaultView;
+
+          assert(input, 'Thiếu input chọn ảnh đại diện.');
+
+          if (typeof View.DataTransfer === 'function') {
+            const transfer = new View.DataTransfer();
+
+            transfer.items.add(file);
+            input.files = transfer.files;
+          } else {
+            Object.defineProperty(input, 'files', {
+              configurable: true,
+              value: [file]
+            });
+          }
+
+          input.dispatchEvent(new View.Event('change', {
+            bubbles: true
+          }));
+        };
+
+        const inspectDataImage = source => new Promise((resolve, reject) => {
+          const image = new Image();
+
+          image.onload = () => {
+            resolve({
+              width: image.naturalWidth,
+              height: image.naturalHeight
+            });
+          };
+          image.onerror = () => reject(new Error('Ảnh đã lưu không thể mở lại.'));
+          image.src = source;
+        });
+
+        const openAvatarView = async doc => {
+          const trigger = doc.querySelector('#profileAvatarTrigger');
+          const menu = doc.querySelector('#avatarMenu');
+          const viewButton = doc.querySelector('#viewAvatarImage');
+          const modal = doc.querySelector('#avatarViewModal');
+
+          trigger.click();
+          await waitFor(() => !menu.hidden,
+            'Bấm avatar không mở menu tùy chọn.');
+          viewButton.click();
+          await waitFor(() => !modal.hidden,
+            'Tùy chọn xem ảnh không mở modal.');
+
+          return modal;
+        };
+
+        const assertAvatarSynced = (doc, source) => {
+          const sharedAvatars = Array.from(
+            doc.querySelectorAll('[data-current-user-initials]')
+          );
+
+          assert(sharedAvatars.length >= 2,
+            'Không tìm thấy avatar dùng chung ở header và profile popover.');
+          assert(sharedAvatars.every(node => {
+            return node.querySelector('img.avatar-image')?.getAttribute('src') === source;
+          }), 'Avatar chưa đồng bộ ở header hoặc profile popover.');
+          assert(
+            doc.querySelector('#profileAvatar img.avatar-image')?.getAttribute('src') === source,
+            'Avatar lớn trên trang hồ sơ chưa đồng bộ.'
+          );
+        };
+
+        const cleanupAccount = (email, passwords) => {
+          if (!email) {
+            return;
+          }
+
+          AuthService.logout();
+
+          for (const password of passwords) {
+            const login = AuthService.login({
+              email,
+              password,
+              remember: false
+            });
+
+            if (login.ok) {
+              AuthService.deleteAccount(password);
+              return;
+            }
+          }
+        };
+
+        const run = async () => {
           try {
             frame.setAttribute('aria-hidden', 'true');
             frame.style.cssText =
-              'position:fixed;inset:0;width:100vw;height:100vh;border:0;visibility:hidden;pointer-events:none;';
+              `position:fixed;inset:0 auto 0 0;width:${frameWidth};height:100vh;` +
+              'border:0;visibility:hidden;pointer-events:none;';
             document.body.appendChild(frame);
             AuthService.logout();
-            email = createTestAccount();
+            primaryEmail = createTestAccount('Profile Avatar Check');
 
-            const doc = await loadProfile();
-            const profileForm = doc.querySelector('#profileForm');
-            const profileActions = doc.querySelector('#profileFormActions');
-            const editButton = doc.querySelector('#editProfile');
-            const profileName = doc.querySelector('#profileName');
-            const avatarChoice = doc.querySelector('[data-avatar-color]');
-            const passwordModal = doc.querySelector('#changePasswordModal');
-            const passwordForm = doc.querySelector('#passwordForm');
-            const oldPassword = doc.querySelector('#oldPassword');
+            const primaryUser = AuthService.getCurrentUser();
+            const usersBeforeEdit = Storage.rawInspect(CONFIG.STORAGE.USERS);
+            const primaryIndex = usersBeforeEdit.value?.findIndex(user => {
+              return user.id === primaryUser.id;
+            });
+
+            assert(usersBeforeEdit.ok && primaryIndex >= 0,
+              'Không thể chuẩn bị dữ liệu user cũ để kiểm tra tương thích.');
+
+            const originalPasswordHash = usersBeforeEdit.value[primaryIndex].passwordHash;
+
+            usersBeforeEdit.value[primaryIndex] = {
+              ...usersBeforeEdit.value[primaryIndex],
+              role: 'Legacy profile role',
+              school: 'Legacy profile school'
+            };
+            assert(Storage.rawWrite(
+              CONFIG.STORAGE.USERS,
+              usersBeforeEdit.value
+            ).ok, 'Không thể mô phỏng dữ liệu user cũ có role và school.');
+
+            let doc = await loadProfile();
+            let profileForm = doc.querySelector('#profileForm');
+            let profileActions = doc.querySelector('#profileFormActions');
+            let editButton = doc.querySelector('#editProfile');
+            let profileName = doc.querySelector('#profileName');
+            let avatarChoice = doc.querySelector('[data-avatar-color]');
+            let passwordModal = doc.querySelector('#changePasswordModal');
+            let passwordForm = doc.querySelector('#passwordForm');
+            let oldPassword = doc.querySelector('#oldPassword');
+            const fileInput = doc.querySelector('#avatarFileInput');
+            const previewModal = doc.querySelector('#avatarPreviewModal');
+
+            assert(
+              !doc.querySelector(
+                '#profileRole, #profileSchool, #profileDisplayRole, #profileDisplaySchool'
+              ),
+              'Trang Hồ sơ vẫn còn trường Vai trò hoặc Tổ chức.'
+            );
+            assert(
+              !doc.querySelector('#profileInformationTitle').parentElement
+                .parentElement.parentElement.textContent.includes('Vai trò') &&
+              !doc.querySelector('#profileInformationTitle').parentElement
+                .parentElement.parentElement.textContent.includes('Tổ chức'),
+              'Phần Thông tin cá nhân vẫn hiển thị nhãn Vai trò hoặc Tổ chức.'
+            );
+
+            const profileGrid = doc.querySelector('#profileForm .form-grid.two');
+            const nameField = doc.querySelector('#profileName').closest('.form-field');
+            const emailField = doc.querySelector('#profileEmail').closest('.form-field');
+            const bioField = doc.querySelector('#profileBio').closest('.form-field');
+            const gridRect = profileGrid.getBoundingClientRect();
+            const nameRect = nameField.getBoundingClientRect();
+            const emailRect = emailField.getBoundingClientRect();
+            const bioRect = bioField.getBoundingClientRect();
+
+            assert(Math.abs(bioRect.left - gridRect.left) <= 1 &&
+              Math.abs(bioRect.right - gridRect.right) <= 1,
+            'Giới thiệu ngắn chưa chiếm toàn bộ chiều rộng biểu mẫu.');
+            if (frame.contentWindow.innerWidth <= 820) {
+              assert(emailRect.top >= nameRect.bottom,
+                'Họ tên và Email chưa chuyển thành một cột trên tablet/mobile.');
+            } else {
+              assert(Math.abs(nameRect.top - emailRect.top) <= 1,
+                'Họ tên và Email không nằm cùng một hàng trên desktop.');
+            }
+
+            assert(
+              fileInput?.getAttribute('accept') === 'image/jpeg,image/png,image/webp',
+              'Input ảnh chưa giới hạn đúng JPG, PNG và WebP.'
+            );
+            assert(AuthService.getCurrentUser().avatarImage === '',
+              'User cũ hoặc User mới không dùng avatarImage rỗng khi chưa tải ảnh.');
+
+            const fallbackModal = await openAvatarView(doc);
+
+            assert(!doc.querySelector('#avatarViewFallback').hidden &&
+              doc.querySelector('#avatarViewImage').hidden,
+            'Modal xem ảnh không hiển thị initials khi chưa có ảnh tải lên.');
+            fallbackModal.querySelector('[data-avatar-view-close]').click();
+            await wait(230);
+            assert(fallbackModal.hidden &&
+              doc.activeElement === doc.querySelector('#profileAvatarTrigger'),
+            'Nút đóng modal không ẩn modal hoặc không trả focus về avatar.');
+
+            const jpgFile = await createImageFile(
+              doc,
+              'image/jpeg',
+              'avatar-valid.jpg'
+            );
+
+            selectAvatarFile(doc, jpgFile);
+            await waitFor(() => !previewModal.hidden,
+              'JPG hợp lệ không mở modal xem trước.');
+            assert(AuthService.getCurrentUser().avatarImage === '',
+              'Ảnh bị lưu trước khi người dùng nhấn Lưu ảnh đại diện.');
+            doc.querySelector('#saveAvatarImage').click();
+            await waitFor(() => Boolean(AuthService.getCurrentUser().avatarImage),
+              'JPG hợp lệ không được lưu.');
+            await wait(230);
+
+            const jpgAvatar = AuthService.getCurrentUser().avatarImage;
+            const jpgDimensions = await inspectDataImage(jpgAvatar);
+
+            assert(/^data:image\/(?:webp|jpeg);base64,/i.test(jpgAvatar),
+              'Ảnh JPG không được xuất thành WebP hoặc JPEG dự phòng.');
+            assert(jpgDimensions.width === 512 && jpgDimensions.height === 512,
+              'Ảnh JPG không được cắt vuông và thu nhỏ về tối đa 512 × 512.');
+            assertAvatarSynced(doc, jpgAvatar);
+
+            const invalidFile = new doc.defaultView.File(
+              ['not-an-image'],
+              'avatar-invalid.txt',
+              {
+                type: 'text/plain'
+              }
+            );
+
+            selectAvatarFile(doc, invalidFile);
+            await wait(100);
+            assert(previewModal.hidden,
+              'Tệp không phải ảnh vẫn mở modal xem trước.');
+            assert(AuthService.getCurrentUser().avatarImage === jpgAvatar,
+              'Tệp không phải ảnh đã làm thay đổi avatar hiện tại.');
+            assert(doc.querySelector('#toastRoot').textContent.includes(
+              'Vui lòng chọn ảnh JPG, PNG hoặc WebP.'
+            ), 'Không hiển thị Toast tiếng Việt khi từ chối tệp không phải ảnh.');
+
+            const oversizedFile = new doc.defaultView.File(
+              [new Uint8Array((5 * 1024 * 1024) + 1)],
+              'avatar-too-large.jpg',
+              {
+                type: 'image/jpeg'
+              }
+            );
+
+            selectAvatarFile(doc, oversizedFile);
+            await wait(100);
+            assert(previewModal.hidden,
+              'Tệp lớn hơn 5 MB vẫn mở modal xem trước.');
+            assert(AuthService.getCurrentUser().avatarImage === jpgAvatar,
+              'Tệp lớn hơn 5 MB đã làm thay đổi avatar hiện tại.');
+            assert(doc.querySelector('#toastRoot').textContent.includes(
+              'Ảnh đại diện không được lớn hơn 5 MB.'
+            ), 'Không hiển thị Toast tiếng Việt khi ảnh vượt quá 5 MB.');
+
+            const pngFile = await createImageFile(
+              doc,
+              'image/png',
+              'avatar-valid.png'
+            );
+
+            selectAvatarFile(doc, pngFile);
+            await waitFor(() => !previewModal.hidden,
+              'PNG hợp lệ không mở modal xem trước.');
+            doc.querySelector('#cancelAvatarPreview').click();
+            await wait(230);
+            assert(AuthService.getCurrentUser().avatarImage === jpgAvatar,
+              'Nút Hủy trong modal xem trước vẫn ghi dữ liệu ảnh.');
+
+            selectAvatarFile(doc, pngFile);
+            await waitFor(() => !previewModal.hidden,
+              'Không thể chọn lại PNG sau khi hủy.');
+            doc.querySelector('#saveAvatarImage').click();
+            await waitFor(
+              () => AuthService.getCurrentUser().avatarImage !== jpgAvatar,
+              'PNG hợp lệ không được lưu.'
+            );
+            await wait(230);
+
+            const pngAvatar = AuthService.getCurrentUser().avatarImage;
+            const pngDimensions = await inspectDataImage(pngAvatar);
+
+            assert(pngDimensions.width === 512 && pngDimensions.height === 512,
+              'Ảnh PNG không được cắt vuông và thu nhỏ đúng kích thước.');
+            assertAvatarSynced(doc, pngAvatar);
+
+            const webpFile = await createImageFile(
+              doc,
+              'image/webp',
+              'avatar-valid.webp'
+            );
+
+            selectAvatarFile(doc, webpFile);
+            await waitFor(() => !previewModal.hidden,
+              'WebP hợp lệ không mở modal xem trước.');
+            doc.querySelector('#saveAvatarImage').click();
+            await waitFor(
+              () => AuthService.getCurrentUser().avatarImage !== pngAvatar,
+              'WebP hợp lệ không được lưu.'
+            );
+            await wait(230);
+
+            const webpAvatar = AuthService.getCurrentUser().avatarImage;
+            const webpDimensions = await inspectDataImage(webpAvatar);
+
+            assert(webpDimensions.width === 512 && webpDimensions.height === 512,
+              'Ảnh WebP không được cắt vuông và thu nhỏ đúng kích thước.');
+            assertAvatarSynced(doc, webpAvatar);
+
+            const imageModal = await openAvatarView(doc);
+
+            assert(!doc.querySelector('#avatarViewImage').hidden &&
+              doc.querySelector('#avatarViewImage').getAttribute('src') === webpAvatar,
+            'Modal xem ảnh lớn không hiển thị avatarImage hiện tại.');
+            doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', {
+              key: 'Escape',
+              bubbles: true
+            }));
+            await wait(230);
+            assert(imageModal.hidden,
+              'Phím Escape không đóng modal xem ảnh đại diện.');
+
+            const overlayModal = await openAvatarView(doc);
+
+            overlayModal.dispatchEvent(new doc.defaultView.MouseEvent('mousedown', {
+              bubbles: true,
+              button: 0
+            }));
+            await wait(230);
+            assert(overlayModal.hidden,
+              'Click overlay không đóng modal xem ảnh đại diện.');
+
+            doc = await loadProfile();
+            assert(AuthService.getCurrentUser().avatarImage === webpAvatar,
+              'Avatar không còn sau khi reload.');
+            assertAvatarSynced(doc, webpAvatar);
+
+            AuthService.logout();
+            secondaryEmail = createTestAccount('Avatar Isolation Check');
+            doc = await loadProfile();
+            assert(AuthService.getCurrentUser().avatarImage === '',
+              'Tài khoản B nhìn thấy avatarImage của tài khoản A.');
+            assert(!doc.querySelector('#profileAvatar img'),
+              'Trang hồ sơ tài khoản B hiển thị ảnh của tài khoản A.');
+            assert(AuthService.deleteAccount('123456').ok,
+              'Không thể dọn tài khoản B kiểm tra.');
+            secondaryEmail = '';
+
+            const relogin = AuthService.login({
+              email: primaryEmail,
+              password: '123456',
+              remember: false
+            });
+
+            assert(relogin.ok,
+              'Không thể đăng nhập lại tài khoản A sau kiểm tra cách ly.');
+            doc = await loadProfile();
+            assert(AuthService.getCurrentUser().avatarImage === webpAvatar,
+              'Avatar không còn sau khi đăng xuất và đăng nhập lại.');
+            assertAvatarSynced(doc, webpAvatar);
+
+            profileForm = doc.querySelector('#profileForm');
+            profileActions = doc.querySelector('#profileFormActions');
+            editButton = doc.querySelector('#editProfile');
+            profileName = doc.querySelector('#profileName');
+            avatarChoice = doc.querySelector('[data-avatar-color]');
+
+            const updatedEmail =
+              `profile-updated-${Date.now().toString(36)}@taskflow.test`;
+            const updatedName = 'Hồ sơ đã cập nhật';
+            const updatedBio = 'Giới thiệu đã được lưu từ biểu mẫu hồ sơ.';
+            const newColorChoice = Array.from(
+              doc.querySelectorAll('[data-avatar-color]')
+            ).find(button => {
+              return button.dataset.avatarColor.toLowerCase() !==
+                AuthService.getCurrentUser().avatarColor.toLowerCase();
+            });
+
+            editButton.click();
+            profileName.value = updatedName;
+            profileForm.elements.email.value = updatedEmail;
+            profileForm.elements.bio.value = updatedBio;
+            newColorChoice.click();
+            profileForm.dispatchEvent(new doc.defaultView.Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            await waitFor(() => {
+              const user = AuthService.getCurrentUser();
+
+              return user?.email === updatedEmail &&
+                user.fullName === updatedName &&
+                user.bio === updatedBio;
+            }, 'Không lưu được Họ tên, Email và Giới thiệu ngắn.');
+
+            const updatedProfile = AuthService.getCurrentUser();
+
+            assert(updatedProfile.avatarImage === webpAvatar,
+              'Lưu thông tin cá nhân làm mất avatarImage hiện tại.');
+            assert(updatedProfile.avatarColor === newColorChoice.dataset.avatarColor,
+              'Màu avatar không được lưu cùng hồ sơ.');
+            assert(profileForm.getAttribute('aria-readonly') === 'true' &&
+              profileActions.hidden,
+            'Lưu hồ sơ không đưa biểu mẫu về chế độ chỉ xem.');
+            assert(doc.querySelector('#profileDisplayName').textContent === updatedName &&
+              doc.querySelector('#profileDisplayEmail').textContent === updatedEmail,
+            'Tên hoặc email trong tóm tắt hồ sơ chưa cập nhật ngay.');
+            assert(Array.from(
+              doc.querySelectorAll('[data-current-user-name]')
+            ).every(node => node.textContent === updatedName),
+            'Tên người dùng ở header hoặc popover chưa đồng bộ ngay.');
+            assertAvatarSynced(doc, webpAvatar);
+
+            const usersAfterProfileSave = Storage.rawInspect(CONFIG.STORAGE.USERS);
+            const storedPrimary = usersAfterProfileSave.value?.find(user => {
+              return user.id === primaryUser.id;
+            });
+
+            assert(usersAfterProfileSave.ok &&
+              storedPrimary?.passwordHash === originalPasswordHash,
+            'Cập nhật hồ sơ làm mất hoặc thay đổi passwordHash.');
+            assert(storedPrimary.role === 'Legacy profile role' &&
+              storedPrimary.school === 'Legacy profile school',
+            'Cập nhật hồ sơ làm mất dữ liệu role/school cũ trong LocalStorage.');
+
+            const ignoredLegacyPatch = AuthService.updateProfile({
+              role: 'Giá trị không được phép',
+              school: 'Giá trị không được phép',
+              organization: 'Giá trị không được phép'
+            });
+            const usersAfterIgnoredPatch = Storage.rawInspect(CONFIG.STORAGE.USERS);
+            const storedAfterIgnoredPatch = usersAfterIgnoredPatch.value?.find(user => {
+              return user.id === primaryUser.id;
+            });
+
+            assert(ignoredLegacyPatch.ok &&
+              storedAfterIgnoredPatch.role === 'Legacy profile role' &&
+              storedAfterIgnoredPatch.school === 'Legacy profile school' &&
+              !Object.prototype.hasOwnProperty.call(
+                storedAfterIgnoredPatch,
+                'organization'
+              ),
+            'AuthService.updateProfile vẫn cập nhật trường hồ sơ không được phép.');
+
+            duplicateEmail =
+              `profile-duplicate-${Date.now().toString(36)}@taskflow.test`;
+            const duplicateRegistration = AuthService.register({
+              fullName: 'Duplicate Email Check',
+              email: duplicateEmail,
+              password: '123456',
+              confirmPassword: '123456',
+              acceptTerms: true
+            });
+
+            assert(duplicateRegistration.ok,
+              'Không thể tạo tài khoản phụ để kiểm tra email trùng.');
+            assert(AuthService.getCurrentUser()?.id === primaryUser.id,
+              'Đăng ký tài khoản phụ đã làm thay đổi phiên tài khoản đang sửa.');
+
+            editButton.click();
+            profileForm.elements.email.value = duplicateEmail;
+            profileForm.dispatchEvent(new doc.defaultView.Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            await waitFor(() => {
+              return doc.querySelector('#profileEmailError').textContent.includes(
+                'Email này đang thuộc tài khoản khác.'
+              );
+            }, 'Kiểm tra email trùng không hiển thị lỗi đúng.');
+            assert(AuthService.getCurrentUser().email === updatedEmail,
+              'Email trùng vẫn ghi đè email hợp lệ của tài khoản.');
+            doc.querySelector('#cancelProfileEdit').click();
+            primaryEmail = updatedEmail;
+
+            const avatarTrigger = doc.querySelector('#profileAvatarTrigger');
+            const avatarMenu = doc.querySelector('#avatarMenu');
+            const deleteAvatar = doc.querySelector('#deleteAvatarImage');
+
+            avatarTrigger.click();
+            await waitFor(() => !avatarMenu.hidden,
+              'Không thể mở menu để xóa avatar.');
+            assert(!deleteAvatar.hidden,
+              'Tùy chọn xóa không hiển thị khi user có avatarImage.');
+            deleteAvatar.click();
+            await waitFor(() => !doc.querySelector('#confirmModal').hidden,
+              'Xóa avatar không dùng ConfirmDialog.');
+            doc.querySelector('#confirmAcceptButton').click();
+            await waitFor(() => AuthService.getCurrentUser().avatarImage === '',
+              'Xác nhận xóa không xóa avatarImage.');
+            await wait(230);
+            assert(!doc.querySelector('#profileAvatar img') &&
+              doc.querySelector('#profileAvatar').textContent.trim() ===
+                AuthService.initials(AuthService.getCurrentUser()),
+            'Xóa avatar không quay về initials và avatarColor.');
+            assert(Array.from(
+              doc.querySelectorAll('[data-current-user-initials]')
+            ).every(node => !node.querySelector('img')),
+            'Avatar dùng chung chưa quay về initials sau khi xóa.');
+            avatarTrigger.click();
+            await waitFor(() => !avatarMenu.hidden,
+              'Không thể mở lại menu avatar sau khi xóa.');
+            assert(deleteAvatar.hidden,
+              'Tùy chọn xóa vẫn khả dụng khi user không còn avatarImage.');
+            avatarTrigger.click();
+
+            profileForm = doc.querySelector('#profileForm');
+            profileActions = doc.querySelector('#profileFormActions');
+            editButton = doc.querySelector('#editProfile');
+            profileName = doc.querySelector('#profileName');
+            avatarChoice = doc.querySelector('[data-avatar-color]');
+            passwordModal = doc.querySelector('#changePasswordModal');
+            passwordForm = doc.querySelector('#passwordForm');
+            oldPassword = doc.querySelector('#oldPassword');
 
             assert(profileForm?.getAttribute('aria-readonly') === 'true',
               'Hồ sơ không khởi tạo ở chế độ chỉ xem.');
             assert(profileName?.readOnly && avatarChoice?.disabled,
-              'Trường hồ sơ hoặc lựa chọn ảnh đại diện vẫn có thể chỉnh sửa.');
+              'Trường hồ sơ hoặc lựa chọn màu avatar vẫn có thể chỉnh sửa.');
             assert(profileActions?.hidden && !editButton?.hidden,
               'Nút lưu/hủy hoặc nút chỉnh sửa không đúng trạng thái mặc định.');
             assert(passwordModal?.hidden && oldPassword?.getClientRects().length === 0,
-              'Biểu mẫu đổi mật khẩu đang xuất hiện khi chưa được yêu cầu.');
+              'Biểu mẫu đổi mật khẩu xuất hiện khi chưa được yêu cầu.');
+
             const documentWidth = Math.max(
               doc.documentElement.scrollWidth,
               doc.body?.scrollWidth || 0
             );
+
             assert(documentWidth <= frame.contentWindow.innerWidth + 1,
               'Trang hồ sơ bị tràn ngang ở kích thước đang kiểm tra.');
 
-            const savedName = profileName.value;
+            const savedProfile = AuthService.getCurrentUser();
+            const cancelColorChoice = Array.from(
+              doc.querySelectorAll('[data-avatar-color]')
+            ).find(button => {
+              return button.dataset.avatarColor.toLowerCase() !==
+                savedProfile.avatarColor.toLowerCase();
+            });
+
             editButton.click();
-            assert(!profileName.readOnly && !avatarChoice.disabled && !profileActions.hidden,
-              'Nút chỉnh sửa không mở đúng chế độ chỉnh sửa hồ sơ.');
+            assert(!profileName.readOnly && !avatarChoice.disabled &&
+              !profileActions.hidden,
+            'Nút chỉnh sửa không mở đúng chế độ chỉnh sửa hồ sơ.');
             profileName.value = 'Giá trị không lưu';
+            profileForm.elements.email.value = 'cancelled-change@taskflow.test';
+            profileForm.elements.bio.value = 'Giới thiệu không được lưu';
+            cancelColorChoice.click();
             doc.querySelector('#cancelProfileEdit').click();
-            assert(profileName.readOnly && profileName.value === savedName && profileActions.hidden,
-              'Hủy chỉnh sửa không khôi phục chế độ xem hoặc dữ liệu ban đầu.');
+            assert(profileName.readOnly &&
+              profileName.value === savedProfile.fullName &&
+              profileForm.elements.email.value === savedProfile.email &&
+              profileForm.elements.bio.value === savedProfile.bio &&
+              doc.querySelector('[data-avatar-color][aria-pressed="true"]')
+                ?.dataset.avatarColor === savedProfile.avatarColor &&
+              AuthService.getCurrentUser().avatarImage === '' &&
+              profileActions.hidden,
+            'Hủy chỉnh sửa không khôi phục tên, email, giới thiệu, màu hoặc ảnh đại diện.');
 
             doc.querySelector('#openChangePassword').click();
             await wait(150);
@@ -123,14 +691,14 @@
             passwordModal.querySelector('[data-change-password-close]').click();
             await wait(220);
             assert(passwordModal.hidden && oldPassword.value === '',
-              'Đóng modal chưa xóa giá trị mật khẩu hoặc chưa ẩn biểu mẫu.');
+              'Đóng modal chưa xóa mật khẩu hoặc chưa ẩn biểu mẫu.');
 
             doc.querySelector('#openChangePassword').click();
             await wait(150);
             oldPassword.value = '123456';
             doc.querySelector('#newPassword').value = '654321';
             doc.querySelector('#newPasswordConfirm').value = '654321';
-            passwordForm.dispatchEvent(new Event('submit', {
+            passwordForm.dispatchEvent(new doc.defaultView.Event('submit', {
               bubbles: true,
               cancelable: true
             }));
@@ -139,27 +707,34 @@
               'Lưu mật khẩu mới không đóng modal.');
 
             const changedLogin = AuthService.login({
-              email,
+              email: primaryEmail,
               password: '654321',
               remember: false
             });
-            assert(changedLogin.ok, 'Mật khẩu mới không được lưu đúng.');
-            assert(AuthService.deleteAccount('654321').ok,
-              'Không thể dọn tài khoản kiểm tra.');
 
-            output.textContent = 'PASS: trạng thái xem, chỉnh sửa hồ sơ và modal đổi mật khẩu hoạt động đúng.';
+            assert(changedLogin.ok,
+              'Cập nhật avatar đã làm mất passwordHash hoặc mật khẩu mới không được lưu.');
+            assert(AuthService.deleteAccount('654321').ok,
+              'Không thể dọn tài khoản A kiểm tra.');
+            primaryEmail = '';
+
+            output.textContent =
+              `PASS ${frame.contentWindow.innerWidth}px: bố cục hồ sơ mới, ` +
+              'lưu/hủy hồ sơ, email trùng, dữ liệu legacy, JPG/PNG/WebP, ' +
+              'kiểm tra tệp, nén/cắt 512px, lưu bền vững, cách ly tài khoản, ' +
+              'đồng bộ, xem/xóa avatar và đổi mật khẩu đều hoạt động đúng.';
           } catch (error) {
             output.textContent = `FAIL: ${error.message}`;
           } finally {
             frame.remove();
-
-            if (email && AuthService.getCurrentUser()) {
-              AuthService.logout();
-            }
+            cleanupAccount(duplicateEmail, ['123456']);
+            cleanupAccount(secondaryEmail, ['123456']);
+            cleanupAccount(primaryEmail, ['654321', '123456']);
+            AuthService.logout();
           }
         };
 
-        if (new URLSearchParams(location.search).get('run') === '1') {
+        if (searchParams.get('run') === '1') {
           run();
         }
       })();

@@ -13,6 +13,7 @@
 const AuthService = (() => {
   const STORAGE_ERROR =
     'Không thể lưu dữ liệu. Bộ nhớ trình duyệt có thể đã đầy hoặc bị chặn.';
+  const AVATAR_IMAGE_PATTERN = /^data:image\/(?:jpeg|png|webp);base64,[a-z0-9+/=\s]+$/i;
 
   const normalizeEmail = email => {
     return String(email || '').trim().toLowerCase();
@@ -58,6 +59,12 @@ const AuthService = (() => {
 
   const now = () => {
     return new Date().toISOString();
+  };
+
+  const normalizeAvatarImage = value => {
+    const image = String(value || '').trim();
+
+    return !image || AVATAR_IMAGE_PATTERN.test(image) ? image : '';
   };
 
   // Băm đơn giản để tránh lưu mật khẩu dạng văn bản trong bài tập frontend.
@@ -187,8 +194,19 @@ const AuthService = (() => {
     const list = storedUsers.found ? storedUsers.value : [];
     const email = EXPERIENCE_ACCOUNT.email;
 
-    if (list.some(isExperienceAccount)) {
-      return true;
+    const existingDemoIndex = list.findIndex(isExperienceAccount);
+
+    if (existingDemoIndex >= 0) {
+      if (typeof list[existingDemoIndex].avatarImage === 'string') {
+        return true;
+      }
+
+      list[existingDemoIndex] = {
+        ...list[existingDemoIndex],
+        avatarImage: ''
+      };
+
+      return saveUsers(list).ok;
     }
 
     list.push({
@@ -198,6 +216,7 @@ const AuthService = (() => {
       passwordHash: hashPassword('123456'),
       bio: 'Không gian gợi ý để bạn bắt đầu lên kế hoạch.',
       avatarColor: CONFIG.DEFAULT_ACCENT,
+      avatarImage: '',
       createdAt: now(),
       updatedAt: now()
     });
@@ -215,7 +234,10 @@ const AuthService = (() => {
       ...safeUser
     } = user;
 
-    return safeUser;
+    return {
+      ...safeUser,
+      avatarImage: normalizeAvatarImage(safeUser.avatarImage)
+    };
   };
 
   const register = input => {
@@ -276,6 +298,7 @@ const AuthService = (() => {
       passwordHash: hashPassword(password),
       bio: '',
       avatarColor: CONFIG.DEFAULT_ACCENT,
+      avatarImage: '',
       createdAt: now(),
       updatedAt: now()
     };
@@ -491,6 +514,14 @@ const AuthService = (() => {
     const email = normalizeEmail(
       patch.email ?? list[index].email
     );
+    const hasAvatarImagePatch = Object.prototype.hasOwnProperty.call(
+      patch,
+      'avatarImage'
+    );
+    const requestedAvatarImage = hasAvatarImagePatch ?
+      String(patch.avatarImage || '').trim() :
+      String(list[index].avatarImage || '').trim();
+    const avatarImage = normalizeAvatarImage(requestedAvatarImage);
     const errors = {};
     const nameError = validateName(fullName);
     const emailError = validateEmail(email);
@@ -511,6 +542,10 @@ const AuthService = (() => {
       errors.email = 'Email này đang thuộc tài khoản khác.';
     }
 
+    if (hasAvatarImagePatch && requestedAvatarImage && !avatarImage) {
+      errors.avatarImage = 'Dữ liệu ảnh đại diện không hợp lệ.';
+    }
+
     if (Object.keys(errors).length) {
       return {
         ok: false,
@@ -522,8 +557,6 @@ const AuthService = (() => {
       ...list[index],
       fullName,
       email,
-      role: String(patch.role ?? list[index].role ?? '').trim(),
-      school: String(patch.school ?? list[index].school ?? '').trim(),
       bio: String(patch.bio ?? list[index].bio ?? '')
         .trim()
         .slice(0, 240),
@@ -531,6 +564,7 @@ const AuthService = (() => {
           patch.avatarColor ?? list[index].avatarColor ?? ''
         )) ?
         String(patch.avatarColor ?? list[index].avatarColor) : CONFIG.DEFAULT_ACCENT,
+      avatarImage,
       updatedAt: now()
     };
 
@@ -542,9 +576,19 @@ const AuthService = (() => {
       return storageError();
     }
 
+    const safeUpdatedUser = sanitize(updatedUser);
+
+    if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('taskflow:profile-updated', {
+        detail: {
+          user: safeUpdatedUser
+        }
+      }));
+    }
+
     return {
       ok: true,
-      data: sanitize(updatedUser)
+      data: safeUpdatedUser
     };
   };
 
