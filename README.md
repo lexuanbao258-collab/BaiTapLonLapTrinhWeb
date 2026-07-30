@@ -1,6 +1,6 @@
 # TaskFlow – Quản lý công việc cá nhân
 
-Phiên bản **1.7.0** · Bài tập lớn môn Cơ sở lập trình Web.
+Phiên bản **1.7.2** · Bài tập lớn môn Cơ sở lập trình Web.
 
 TaskFlow là ứng dụng quản lý công việc chạy hoàn toàn trên trình duyệt bằng HTML, CSS và JavaScript ES6+. Dữ liệu được lưu cục bộ bằng LocalStorage; project không dùng framework, backend, database hoặc CDN bên ngoài.
 
@@ -109,7 +109,7 @@ Khi phát hiện dữ liệu workspace cũ chưa có hậu tố người dùng, 
 
 ## PWA và xóa cache khi phát triển
 
-`service-worker.js` đang dùng cache `taskflow-v1.7.0`. HTML, CSS, JavaScript, manifest và Service Worker được kiểm tra network-first để cache cũ không giữ mã nguồn cũ sau refactor.
+`service-worker.js` đang dùng cache `taskflow-v1.7.4`. HTML, CSS, JavaScript, manifest và Service Worker được kiểm tra network-first để cache cũ không giữ mã nguồn cũ sau refactor.
 
 Khi phát triển và cần xóa cache:
 
@@ -130,6 +130,7 @@ Các trang trong `tests/` hỗ trợ thêm kiểm tra hồi quy qua query `?run=
 - `tests/backup-merge-check.html?run=1`
 - `tests/legacy-migration-check.html?run=1`
 - `tests/profile-interaction-check.html?run=1`
+- `tests/mobile-interaction-check.html?width=390&height=844`
 - `tests/pwa-cache-check.html?run=1`
 - `tests/hidden-visibility-check.html`
 
@@ -142,6 +143,18 @@ Các trang trong `tests/` hỗ trợ thêm kiểm tra hồi quy qua query `?run=
 Chưa có thông tin thành viên, báo cáo hoặc video demo được cung cấp. Bổ sung các thông tin này theo nhóm thực tế trước khi nộp bài.
 
 ## Thay đổi đáng chú ý
+
+### v1.7.2
+
+- Bổ sung thanh tìm kiếm mobile có mở/đóng, focus, Escape và giữ nguyên luồng Enter sang trang Công việc.
+- Thêm hành động đổi trạng thái trực tiếp trong menu task và nút tiêu đề mở chi tiết bằng một lần chạm; giữ kéo-thả Kanban trên desktop.
+- Chuẩn hóa vùng chạm, pointer event, focus-visible, sidebar và responsive cho mobile/tablet; bổ sung trang kiểm thử hồi quy tương tác.
+
+### v1.7.1
+
+- Sửa vùng bấm menu tài khoản ở header khi avatar đang hiển thị ảnh tải lên.
+- Chuẩn hóa hit-area tối thiểu 48 × 48 px, thao tác touch và focus cho `profileChip`.
+- Bổ sung kiểm thử avatar, tên, mũi tên, click ngoài, Escape và cấu trúc `profileChip` trên mọi trang nội bộ.
 
 ### v1.7.0
 

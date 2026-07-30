@@ -36,6 +36,11 @@ const AuthService = (() => {
     return user?.id === EXPERIENCE_ACCOUNT.id || isExperienceEmail(user?.email);
   };
 
+  const findExperienceAccount = list => {
+    return list.find(user => user?.id === EXPERIENCE_ACCOUNT.id) ||
+      list.find(user => isExperienceEmail(user?.email));
+  };
+
   const publicEmail = user => {
     return isExperienceAccount(user) ? EXPERIENCE_ACCOUNT.email : normalizeEmail(user?.email);
   };
@@ -51,10 +56,13 @@ const AuthService = (() => {
   };
 
   const findUserByEmail = (list, email) => {
-    const directMatch = list.find(user => user.email === email);
+    const normalizedEmail = normalizeEmail(email);
+    const directMatch = list.find(user => {
+      return normalizeEmail(user?.email) === normalizedEmail;
+    });
 
     return directMatch || (isExperienceEmail(email) ?
-      list.find(isExperienceAccount) : null);
+      findExperienceAccount(list) : null);
   };
 
   const now = () => {
@@ -184,6 +192,16 @@ const AuthService = (() => {
     return '';
   };
 
+  const validateBio = bio => {
+    const cleanBio = String(bio || '').trim();
+
+    if (cleanBio.length > 240) {
+      return 'Giới thiệu ngắn không được vượt quá 240 ký tự.';
+    }
+
+    return '';
+  };
+
   const ensureDemoAccount = () => {
     const storedUsers = inspectUsers();
 
@@ -194,16 +212,23 @@ const AuthService = (() => {
     const list = storedUsers.found ? storedUsers.value : [];
     const email = EXPERIENCE_ACCOUNT.email;
 
-    const existingDemoIndex = list.findIndex(isExperienceAccount);
+    const existingDemo = findExperienceAccount(list);
+    const existingDemoIndex = existingDemo ?
+      list.findIndex(user => user === existingDemo) : -1;
 
     if (existingDemoIndex >= 0) {
-      if (typeof list[existingDemoIndex].avatarImage === 'string') {
+      const demoPasswordHash = hashPassword('123456');
+      const hasAvatarImage = typeof existingDemo.avatarImage === 'string';
+      const hasDefaultPassword = existingDemo.passwordHash === demoPasswordHash;
+
+      if (hasAvatarImage && hasDefaultPassword) {
         return true;
       }
 
       list[existingDemoIndex] = {
-        ...list[existingDemoIndex],
-        avatarImage: ''
+        ...existingDemo,
+        passwordHash: demoPasswordHash,
+        avatarImage: hasAvatarImage ? existingDemo.avatarImage : ''
       };
 
       return saveUsers(list).ok;
@@ -278,7 +303,7 @@ const AuthService = (() => {
 
     const list = users();
 
-    if (!emailError && list.some(user => user.email === email)) {
+    if (!emailError && findUserByEmail(list, email)) {
       errors.email = 'Email này đã được đăng ký.';
     }
 
@@ -496,6 +521,17 @@ const AuthService = (() => {
       };
     }
 
+    if (isExperienceAccount(currentUser)) {
+      return {
+        ok: false,
+        errors: {
+          general: 'Tài khoản trải nghiệm không thể chỉnh sửa hồ sơ.'
+        }
+      };
+    }
+
+    const changes = patch && typeof patch === 'object' ? patch : {};
+
     const list = users();
     const index = list.findIndex(user => user.id === currentUser.id);
 
@@ -509,22 +545,30 @@ const AuthService = (() => {
     }
 
     const fullName = String(
-      patch.fullName ?? list[index].fullName
+      changes.fullName ?? list[index].fullName
     ).trim();
     const email = normalizeEmail(
-      patch.email ?? list[index].email
+      changes.email ?? list[index].email
     );
+    const bio = String(changes.bio ?? list[index].bio ?? '').trim();
     const hasAvatarImagePatch = Object.prototype.hasOwnProperty.call(
-      patch,
+      changes,
       'avatarImage'
     );
     const requestedAvatarImage = hasAvatarImagePatch ?
-      String(patch.avatarImage || '').trim() :
-      String(list[index].avatarImage || '').trim();
-    const avatarImage = normalizeAvatarImage(requestedAvatarImage);
+      String(changes.avatarImage || '').trim() : '';
+    const avatarImage = hasAvatarImagePatch ?
+      normalizeAvatarImage(requestedAvatarImage) : '';
+    const hasAvatarColorPatch = Object.prototype.hasOwnProperty.call(
+      changes,
+      'avatarColor'
+    );
+    const requestedAvatarColor = hasAvatarColorPatch ?
+      String(changes.avatarColor || '') : '';
     const errors = {};
     const nameError = validateName(fullName);
     const emailError = validateEmail(email);
+    const bioError = validateBio(bio);
 
     if (nameError) {
       errors.fullName = nameError;
@@ -534,8 +578,19 @@ const AuthService = (() => {
       errors.email = emailError;
     }
 
+    if (bioError) {
+      errors.bio = bioError;
+    }
+
+    const experienceEmailOwner = isExperienceEmail(email) ?
+      findExperienceAccount(list) : null;
     const emailBelongsToAnotherUser = list.some(user => {
-      return user.email === email && user.id !== currentUser.id;
+      if (user.id === currentUser.id) {
+        return false;
+      }
+
+      return normalizeEmail(user?.email) === email ||
+        user === experienceEmailOwner;
     });
 
     if (!emailError && emailBelongsToAnotherUser) {
@@ -544,6 +599,10 @@ const AuthService = (() => {
 
     if (hasAvatarImagePatch && requestedAvatarImage && !avatarImage) {
       errors.avatarImage = 'Dữ liệu ảnh đại diện không hợp lệ.';
+    }
+
+    if (hasAvatarColorPatch && !/^#[0-9a-fA-F]{6}$/.test(requestedAvatarColor)) {
+      errors.avatarColor = 'Màu ảnh đại diện không hợp lệ.';
     }
 
     if (Object.keys(errors).length) {
@@ -557,16 +616,17 @@ const AuthService = (() => {
       ...list[index],
       fullName,
       email,
-      bio: String(patch.bio ?? list[index].bio ?? '')
-        .trim()
-        .slice(0, 240),
-      avatarColor: /^#[0-9a-fA-F]{6}$/.test(String(
-          patch.avatarColor ?? list[index].avatarColor ?? ''
-        )) ?
-        String(patch.avatarColor ?? list[index].avatarColor) : CONFIG.DEFAULT_ACCENT,
-      avatarImage,
+      bio,
       updatedAt: now()
     };
+
+    if (hasAvatarColorPatch) {
+      updatedUser.avatarColor = requestedAvatarColor;
+    }
+
+    if (hasAvatarImagePatch) {
+      updatedUser.avatarImage = avatarImage;
+    }
 
     list[index] = updatedUser;
 
@@ -604,9 +664,19 @@ const AuthService = (() => {
       };
     }
 
-    const oldPassword = String(input.oldPassword || '');
-    const newPassword = String(input.newPassword || '');
-    const confirmPassword = String(input.confirmPassword || '');
+    if (isExperienceAccount(currentUser)) {
+      return {
+        ok: false,
+        errors: {
+          general: 'Tài khoản trải nghiệm không thể đổi mật khẩu.'
+        }
+      };
+    }
+
+    const values = input && typeof input === 'object' ? input : {};
+    const oldPassword = String(values.oldPassword || '');
+    const newPassword = String(values.newPassword || '');
+    const confirmPassword = String(values.confirmPassword || '');
     const errors = {};
     const list = users();
     const index = list.findIndex(user => user.id === currentUser.id);
@@ -620,17 +690,23 @@ const AuthService = (() => {
       };
     }
 
-    if (list[index].passwordHash !== hashPassword(oldPassword)) {
+    if (!oldPassword) {
+      errors.oldPassword = 'Vui lòng nhập mật khẩu hiện tại.';
+    } else if (list[index].passwordHash !== hashPassword(oldPassword)) {
       errors.oldPassword = 'Mật khẩu hiện tại không đúng.';
     }
 
-    const newPasswordError = validatePassword(newPassword);
+    const newPasswordError = !newPassword ?
+      'Vui lòng nhập mật khẩu mới.' : validatePassword(newPassword);
 
     if (newPasswordError) {
       errors.newPassword = newPasswordError;
     }
 
-    if (newPassword === oldPassword && newPassword) {
+    if (
+      !newPasswordError &&
+      list[index].passwordHash === hashPassword(newPassword)
+    ) {
       errors.newPassword = 'Mật khẩu mới phải khác mật khẩu hiện tại.';
     }
 
@@ -647,8 +723,11 @@ const AuthService = (() => {
       };
     }
 
-    list[index].passwordHash = hashPassword(newPassword);
-    list[index].updatedAt = now();
+    list[index] = {
+      ...list[index],
+      passwordHash: hashPassword(newPassword),
+      updatedAt: now()
+    };
 
     const saveResult = saveUsers(list);
 
@@ -691,6 +770,15 @@ const AuthService = (() => {
     const account = findUserByEmail(list, email);
     const index = account ? list.findIndex(user => user.id === account.id) : -1;
 
+    if (!emailError && account && isExperienceAccount(account)) {
+      return {
+        ok: false,
+        errors: {
+          general: 'Tài khoản trải nghiệm không thể đặt lại mật khẩu.'
+        }
+      };
+    }
+
     if (!emailError && index < 0) {
       errors.email = 'Không tìm thấy tài khoản với email này.';
     }
@@ -723,6 +811,18 @@ const AuthService = (() => {
       return {
         ok: false,
         message: 'Phiên đăng nhập đã hết hạn.'
+      };
+    }
+
+    if (isExperienceAccount(currentUser)) {
+      const message = 'Tài khoản trải nghiệm không thể xóa tài khoản.';
+
+      return {
+        ok: false,
+        errors: {
+          general: message
+        },
+        message
       };
     }
 
@@ -815,6 +915,7 @@ const AuthService = (() => {
     publicEmail,
     publicName,
     publicBio,
+    isExperienceAccount,
     getExperienceEmail: () => EXPERIENCE_ACCOUNT.email,
     lastEmail,
     ensureDemoAccount

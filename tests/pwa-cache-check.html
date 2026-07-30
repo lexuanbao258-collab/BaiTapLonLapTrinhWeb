@@ -21,17 +21,22 @@
       'use strict';
 
       (() => {
-        const CACHE_NAME = 'taskflow-v1.7.0';
+        const CACHE_NAME = 'taskflow-v1.7.4';
         const requiredAssets = [
           '../index.html',
+          '../profile.html',
           '../assets/css/style.css',
           '../assets/css/responsive.css',
           '../assets/js/core/config.js',
           '../assets/js/core/theme-bootstrap.js',
           '../assets/js/services/backup-service.js',
+          '../assets/js/services/auth-service.js',
           '../assets/js/services/csv-service.js',
+          '../assets/js/components/task-actions.js',
           '../assets/js/pages/settings-page.js',
-          '../assets/js/pages/tasks-page.js'
+          '../assets/js/pages/profile-page.js',
+          '../assets/js/pages/tasks-page.js',
+          '../tests/mobile-interaction-check.html'
         ];
         const output = document.querySelector('#result');
         const button = document.querySelector('#run');

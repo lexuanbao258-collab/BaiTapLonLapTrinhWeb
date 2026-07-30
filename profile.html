@@ -102,16 +102,41 @@
           >
             <i data-icon="menu" data-icon-size="22"></i>
           </button>
-          <label class="global-search" for="globalSearch">
-            <i data-icon="search" data-icon-size="18"></i>
+          <div class="global-search" data-global-search>
+            <button
+              class="global-search-toggle"
+              id="globalSearchToggle"
+              type="button"
+              aria-label="Mở tìm kiếm"
+              aria-controls="globalSearch"
+              aria-expanded="false"
+            >
+              <i data-icon="search" data-icon-size="18"></i>
+            </button>
             <input
               id="globalSearch"
+              name="taskflow_search_query"
               type="search"
+              role="searchbox"
+              aria-label="Tìm kiếm công việc"
               placeholder="Tìm nhanh công việc..."
-              autocomplete="off"
+              autocomplete="one-time-code"
+              autocapitalize="none"
+              spellcheck="false"
+              enterkeyhint="search"
             >
             <kbd>Ctrl K</kbd>
-          </label>
+            <button
+              class="global-search-close"
+              id="globalSearchClose"
+              type="button"
+              aria-label="Đóng tìm kiếm"
+              aria-controls="globalSearch"
+              hidden
+            >
+              <i data-icon="close" data-icon-size="18"></i>
+            </button>
+          </div>
         </div>
 
         <div class="topbar-actions">
@@ -263,6 +288,16 @@
             </aside>
 
             <div class="profile-content-stack">
+              <div
+                class="data-note experience-account-note"
+                id="experienceAccountNote"
+                role="note"
+                hidden
+              >
+                <i data-icon="info" data-icon-size="19"></i>
+                <span>Tài khoản trải nghiệm chỉ dùng để xem thử hệ thống. Vui lòng đăng ký tài khoản riêng để thay đổi thông tin cá nhân và mật khẩu.</span>
+              </div>
+
               <section class="panel profile-form-panel" aria-labelledby="profileInformationTitle">
                 <header class="panel-header">
                   <div>
@@ -302,8 +337,11 @@
                         <label for="profileBio">Giới thiệu ngắn</label>
                         <textarea class="field-control" id="profileBio" name="bio"
                           rows="4" maxlength="240"
-                          placeholder="Một vài dòng về mục tiêu của bạn..." readonly aria-readonly="true"></textarea>
-                        <span class="field-hint">Tối đa 240 ký tự</span>
+                          placeholder="Một vài dòng về mục tiêu của bạn..." readonly aria-readonly="true"
+                          aria-describedby="profileBioHint profileBioError"></textarea>
+                        <span class="field-hint" id="profileBioHint">Tối đa 240 ký tự</span>
+                        <small class="field-error" id="profileBioError"
+                          data-profile-error="bio" aria-live="polite"></small>
                       </div>
 
                       <div class="form-field span-2">
@@ -326,11 +364,13 @@
                       </div>
                     </div>
 
+                    <div class="form-general-error" data-profile-error="general"
+                      role="alert" aria-live="polite"></div>
                     <div class="profile-actions" id="profileFormActions" hidden>
                       <button class="btn btn-ghost" id="cancelProfileEdit" type="button">Hủy</button>
                       <button class="btn btn-primary" type="submit">
                         <i data-icon="check" data-icon-size="16"></i>
-                        Lưu thay đổi
+                        <span data-submit-label>Lưu thay đổi</span>
                       </button>
                     </div>
                   </form>
@@ -745,7 +785,7 @@
           <i data-icon="close" data-icon-size="20"></i>
         </button>
       </header>
-      <form class="modal-form" id="passwordForm" novalidate autocomplete="off">
+      <form class="modal-form" id="passwordForm" novalidate>
         <div class="modal-body profile-content-stack">
           <div class="data-note">
             <i data-icon="shield" data-icon-size="18"></i>
@@ -754,37 +794,72 @@
 
           <div class="form-grid two">
             <div class="form-field span-2">
+              <label for="passwordAccountEmail">Tài khoản</label>
+              <input
+                class="field-control"
+                id="passwordAccountEmail"
+                name="username"
+                type="email"
+                autocomplete="username"
+                readonly
+              >
+            </div>
+            <div class="form-field span-2">
               <label for="oldPassword">Mật khẩu hiện tại <em>*</em></label>
-              <input class="field-control" id="oldPassword" name="oldPassword"
-                type="password" autocomplete="off" required
-                aria-describedby="oldPasswordError">
+              <div class="password-field-wrap">
+                <input class="field-control" id="oldPassword" name="oldPassword"
+                  type="password" autocomplete="current-password" required
+                  aria-describedby="oldPasswordError">
+                <button class="password-visibility-toggle" type="button"
+                  data-password-visibility="oldPassword" aria-controls="oldPassword"
+                  aria-label="Hiện mật khẩu" aria-pressed="false">
+                  <i data-icon="eye" data-icon-size="18"></i>
+                </button>
+              </div>
               <small class="field-error" id="oldPasswordError"
                 data-password-error="oldPassword" aria-live="polite"></small>
             </div>
             <div class="form-field">
               <label for="newPassword">Mật khẩu mới <em>*</em></label>
-              <input class="field-control" id="newPassword" name="newPassword"
-                type="password" autocomplete="new-password" minlength="6"
-                maxlength="64" required aria-describedby="newPasswordError">
+              <div class="password-field-wrap">
+                <input class="field-control" id="newPassword" name="newPassword"
+                  type="password" autocomplete="new-password" minlength="6"
+                  maxlength="64" required aria-describedby="newPasswordError">
+                <button class="password-visibility-toggle" type="button"
+                  data-password-visibility="newPassword" aria-controls="newPassword"
+                  aria-label="Hiện mật khẩu" aria-pressed="false">
+                  <i data-icon="eye" data-icon-size="18"></i>
+                </button>
+              </div>
               <small class="field-error" id="newPasswordError"
                 data-password-error="newPassword" aria-live="polite"></small>
             </div>
             <div class="form-field">
               <label for="newPasswordConfirm">Nhập lại mật khẩu <em>*</em></label>
-              <input class="field-control" id="newPasswordConfirm"
-                name="confirmPassword" type="password"
-                autocomplete="new-password" required
-                aria-describedby="newPasswordConfirmError">
+              <div class="password-field-wrap">
+                <input class="field-control" id="newPasswordConfirm"
+                  name="confirmPassword" type="password"
+                  autocomplete="new-password" required maxlength="64"
+                  aria-describedby="newPasswordConfirmError">
+                <button class="password-visibility-toggle" type="button"
+                  data-password-visibility="newPasswordConfirm"
+                  aria-controls="newPasswordConfirm" aria-label="Hiện mật khẩu"
+                  aria-pressed="false">
+                  <i data-icon="eye" data-icon-size="18"></i>
+                </button>
+              </div>
               <small class="field-error" id="newPasswordConfirmError"
                 data-password-error="confirmPassword" aria-live="polite"></small>
             </div>
           </div>
+          <div class="form-general-error" data-password-error="general"
+            role="alert" aria-live="polite"></div>
         </div>
         <footer class="modal-footer">
           <button class="btn btn-ghost" type="button" data-change-password-close>Hủy</button>
           <button class="btn btn-primary" type="submit">
             <i data-icon="key" data-icon-size="16"></i>
-            Cập nhật mật khẩu
+            <span data-submit-label>Cập nhật mật khẩu</span>
           </button>
         </footer>
       </form>
@@ -813,8 +888,20 @@
           <p>Nhập mật khẩu hiện tại để xác nhận xóa tài khoản và toàn bộ dữ liệu riêng.</p>
         </div>
         <div class="form-field">
+          <label for="deleteAccountEmail">Tài khoản</label>
+          <input
+            class="field-control"
+            id="deleteAccountEmail"
+            name="username"
+            type="email"
+            autocomplete="username"
+            readonly
+          >
+        </div>
+        <div class="form-field">
           <label for="deletePasswordInput">Mật khẩu hiện tại</label>
-          <input class="field-control" id="deletePasswordInput" type="password"
+          <input class="field-control" id="deletePasswordInput"
+            name="currentPassword" type="password"
             autocomplete="current-password" aria-describedby="deletePasswordError">
           <small class="field-error" id="deletePasswordError" aria-live="polite"></small>
         </div>

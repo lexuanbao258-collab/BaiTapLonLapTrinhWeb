@@ -301,7 +301,7 @@
       'click',
       closeCategoryModal
     );
-    document.querySelector('#categoryModal').addEventListener('mousedown', event => {
+    document.querySelector('#categoryModal').addEventListener('pointerdown', event => {
       if (event.target.id === 'categoryModal') {
         closeCategoryModal();
       }
@@ -331,4 +331,3 @@
   render();
   window.addEventListener('taskflow:data-changed', render);
 })();
-

@@ -421,7 +421,9 @@
           target.textContent = '';
         }
 
-        form?.querySelector('[data-error="general"]')?.replaceChildren();
+        form?.querySelector(
+          '[data-error="general"], [data-forgot-error="general"]'
+        )?.replaceChildren();
       });
     });
   };
@@ -442,4 +444,3 @@
     initForgotPassword();
   }
 })();
-

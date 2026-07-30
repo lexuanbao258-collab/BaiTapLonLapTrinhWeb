@@ -55,6 +55,11 @@ const TaskActions = (() => {
         return;
       }
 
+      if (action === 'view') {
+        TaskDetail.show(task);
+        return;
+      }
+
       if (action !== 'more') {
         return;
       }
@@ -62,13 +67,18 @@ const TaskActions = (() => {
       const menu = TaskCard.openMenu(task, actionElement);
 
       menu.addEventListener('click', async menuEvent => {
-        const menuAction = menuEvent.target.closest('[data-action]')?.dataset.action;
+        const menuActionElement = menuEvent.target.closest('[data-action]');
+        const menuAction = menuActionElement?.dataset.action;
 
         if (!menuAction) {
           return;
         }
 
-        menu.remove();
+        if (typeof menu.taskFlowClose === 'function') {
+          menu.taskFlowClose(false);
+        } else {
+          menu.remove();
+        }
 
         if (actionElement.isConnected) {
           actionElement.focus({ preventScroll: true });
@@ -105,6 +115,26 @@ const TaskActions = (() => {
             return;
           }
 
+          onChanged?.();
+          return;
+        }
+
+        if (menuAction === 'status') {
+          const nextStatus = menuActionElement.dataset.status;
+          const status = CONFIG.STATUSES.find(item => item.value === nextStatus);
+
+          if (!status || status.value === task.status) {
+            return;
+          }
+
+          const result = TaskService.setTaskStatus(task.id, status.value);
+
+          if (!Toast.mutationSucceeded(result)) {
+            reportMutationFailure(result);
+            return;
+          }
+
+          Toast.show(`Đã chuyển sang “${status.label}”.`, 'info');
           onChanged?.();
           return;
         }

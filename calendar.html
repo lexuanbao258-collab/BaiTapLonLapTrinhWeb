@@ -102,16 +102,41 @@
           >
             <i data-icon="menu" data-icon-size="22"></i>
           </button>
-          <label class="global-search" for="globalSearch">
-            <i data-icon="search" data-icon-size="18"></i>
+          <div class="global-search" data-global-search>
+            <button
+              class="global-search-toggle"
+              id="globalSearchToggle"
+              type="button"
+              aria-label="Mở tìm kiếm"
+              aria-controls="globalSearch"
+              aria-expanded="false"
+            >
+              <i data-icon="search" data-icon-size="18"></i>
+            </button>
             <input
               id="globalSearch"
+              name="taskflow_search_query"
               type="search"
+              role="searchbox"
+              aria-label="Tìm kiếm công việc"
               placeholder="Tìm nhanh công việc..."
-              autocomplete="off"
+              autocomplete="one-time-code"
+              autocapitalize="none"
+              spellcheck="false"
+              enterkeyhint="search"
             >
             <kbd>Ctrl K</kbd>
-          </label>
+            <button
+              class="global-search-close"
+              id="globalSearchClose"
+              type="button"
+              aria-label="Đóng tìm kiếm"
+              aria-controls="globalSearch"
+              hidden
+            >
+              <i data-icon="close" data-icon-size="18"></i>
+            </button>
+          </div>
         </div>
 
         <div class="topbar-actions">

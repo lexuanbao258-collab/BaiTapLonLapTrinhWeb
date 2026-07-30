@@ -700,7 +700,7 @@
       closeTaskImportModal
     );
     elements.cancelTaskImport.addEventListener('click', closeTaskImportModal);
-    elements.taskImportModal.addEventListener('mousedown', event => {
+    elements.taskImportModal.addEventListener('pointerdown', event => {
       if (event.target === elements.taskImportModal) {
         closeTaskImportModal();
       }

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>TaskFlow profile interaction check</title>
+    <link rel="icon" href="../assets/img/logo.svg" type="image/svg+xml">
     <style>html,body{margin:0;overflow:hidden}</style>
   </head>
   <body>
@@ -28,8 +29,11 @@
         const frame = document.createElement('iframe');
         const searchParams = new URLSearchParams(location.search);
         const requestedWidth = Number.parseInt(searchParams.get('width') || '', 10);
+        const requestedHeight = Number.parseInt(searchParams.get('height') || '', 10);
         const frameWidth = Number.isFinite(requestedWidth) && requestedWidth >= 320 ?
           `${requestedWidth}px` : '100vw';
+        const frameHeight = Number.isFinite(requestedHeight) && requestedHeight >= 480 ?
+          `${requestedHeight}px` : '100vh';
         const wait = milliseconds => new Promise(resolve => {
           window.setTimeout(resolve, milliseconds);
         });
@@ -186,6 +190,132 @@
           return modal;
         };
 
+        const dispatchClick = (doc, target, coordinates = {}) => {
+          assert(target, 'Thiếu phần tử cần bấm trong kiểm tra menu tài khoản.');
+          target.dispatchEvent(new doc.defaultView.MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            clientX: coordinates.clientX || 0,
+            clientY: coordinates.clientY || 0
+          }));
+        };
+
+        const assertHeaderMenuClick = async (doc, target, label) => {
+          const profileButton = doc.querySelector('#profileChip');
+          const profilePopover = doc.querySelector('#profilePopover');
+          const avatarMenu = doc.querySelector('#avatarMenu');
+          const avatarPreview = doc.querySelector('#avatarPreviewModal');
+          const avatarView = doc.querySelector('#avatarViewModal');
+          const fileInput = doc.querySelector('#avatarFileInput');
+          let fileClickCount = 0;
+          const trackFileClick = () => {
+            fileClickCount += 1;
+          };
+
+          if (!profilePopover.hidden) {
+            dispatchClick(doc, profileButton);
+            await waitFor(() => profilePopover.hidden,
+              'Không thể đóng menu tài khoản trước kiểm tra tiếp theo.');
+          }
+
+          fileInput.addEventListener('click', trackFileClick);
+          dispatchClick(doc, target);
+          await waitFor(() => !profilePopover.hidden,
+            `${label} không mở menu tài khoản bằng một lần bấm.`);
+          fileInput.removeEventListener('click', trackFileClick);
+
+          assert(profileButton.getAttribute('aria-expanded') === 'true',
+            `${label} mở menu nhưng aria-expanded chưa chuyển thành true.`);
+          assert(avatarMenu.hidden && avatarPreview.hidden && avatarView.hidden &&
+            fileClickCount === 0,
+          `${label} mở nhầm chức năng ảnh đại diện của trang Hồ sơ.`);
+
+          dispatchClick(doc, profileButton);
+          await waitFor(() => profilePopover.hidden,
+            'Bấm lại profileChip không đóng menu tài khoản.');
+          assert(profileButton.getAttribute('aria-expanded') === 'false',
+            'Đóng menu tài khoản chưa đưa aria-expanded về false.');
+        };
+
+        const assertHeaderMenuDismissal = async doc => {
+          const profileButton = doc.querySelector('#profileChip');
+          const profilePopover = doc.querySelector('#profilePopover');
+
+          dispatchClick(doc, profileButton);
+          await waitFor(() => !profilePopover.hidden,
+            'Không thể mở menu để kiểm tra click bên ngoài.');
+          dispatchClick(doc, doc.querySelector('#mainContent'));
+          await waitFor(() => profilePopover.hidden,
+            'Click ngoài profileChip/profilePopover không đóng menu.');
+
+          dispatchClick(doc, profileButton);
+          await waitFor(() => !profilePopover.hidden,
+            'Không thể mở menu để kiểm tra phím Escape.');
+          doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', {
+            key: 'Escape',
+            bubbles: true
+          }));
+          await waitFor(() => profilePopover.hidden,
+            'Phím Escape không đóng menu tài khoản.');
+          assert(profileButton.getAttribute('aria-expanded') === 'false' &&
+            doc.activeElement === profileButton,
+          'Escape chưa cập nhật aria-expanded hoặc trả focus về profileChip.');
+        };
+
+        const assertHeaderHitArea = async doc => {
+          const profileButton = doc.querySelector('#profileChip');
+          const avatar = profileButton.querySelector('.avatar');
+          const name = profileButton.querySelector('[data-current-user-name]');
+          const chevron = profileButton.querySelector('.profile-chevron');
+          const rect = profileButton.getBoundingClientRect();
+          const buttonStyle = doc.defaultView.getComputedStyle(profileButton);
+
+          assert(rect.width >= 48 && rect.height >= 48,
+            'Vùng bấm profileChip nhỏ hơn 48 × 48px.');
+          assert(buttonStyle.touchAction === 'manipulation',
+            'profileChip chưa tối ưu thao tác chạm.');
+          assert(doc.defaultView.getComputedStyle(avatar).pointerEvents === 'none' &&
+            doc.defaultView.getComputedStyle(name).pointerEvents === 'none' &&
+            doc.defaultView.getComputedStyle(chevron).pointerEvents === 'none',
+          'Avatar, tên hoặc mũi tên vẫn chặn hit-test của profileChip.');
+
+          await assertHeaderMenuClick(doc, avatar, 'Avatar chữ viết tắt');
+          await assertHeaderMenuClick(doc, name, 'Tên người dùng');
+          await assertHeaderMenuClick(doc, chevron, 'Mũi tên tài khoản');
+
+          const centerPoint = {
+            clientX: rect.left + (rect.width / 2),
+            clientY: rect.top + (rect.height / 2)
+          };
+          const edgePoint = {
+            clientX: rect.left + 2,
+            clientY: rect.top + (rect.height / 2)
+          };
+          const centerTarget = doc.elementFromPoint(
+            centerPoint.clientX,
+            centerPoint.clientY
+          );
+          const edgeTarget = doc.elementFromPoint(
+            edgePoint.clientX,
+            edgePoint.clientY
+          );
+
+          assert(centerTarget === profileButton && edgeTarget === profileButton,
+            'Phần tử con vẫn chiếm hit-test ở giữa hoặc mép profileChip.');
+          await assertHeaderMenuClick(
+            doc,
+            centerTarget,
+            'Điểm giữa profileChip'
+          );
+          await assertHeaderMenuClick(
+            doc,
+            edgeTarget,
+            'Mép profileChip'
+          );
+          await assertHeaderMenuDismissal(doc);
+        };
+
         const assertAvatarSynced = (doc, source) => {
           const sharedAvatars = Array.from(
             doc.querySelectorAll('[data-current-user-initials]')
@@ -227,7 +357,7 @@
           try {
             frame.setAttribute('aria-hidden', 'true');
             frame.style.cssText =
-              `position:fixed;inset:0 auto 0 0;width:${frameWidth};height:100vh;` +
+              `position:fixed;inset:0 auto 0 0;width:${frameWidth};height:${frameHeight};` +
               'border:0;visibility:hidden;pointer-events:none;';
             document.body.appendChild(frame);
             AuthService.logout();
@@ -306,6 +436,7 @@
             );
             assert(AuthService.getCurrentUser().avatarImage === '',
               'User cũ hoặc User mới không dùng avatarImage rỗng khi chưa tải ảnh.');
+            await assertHeaderHitArea(doc);
 
             const fallbackModal = await openAvatarView(doc);
 
@@ -342,6 +473,20 @@
             assert(jpgDimensions.width === 512 && jpgDimensions.height === 512,
               'Ảnh JPG không được cắt vuông và thu nhỏ về tối đa 512 × 512.');
             assertAvatarSynced(doc, jpgAvatar);
+            const jpgHeaderImage = doc.querySelector(
+              '#profileChip [data-current-user-initials] > img.avatar-image'
+            );
+
+            assert(jpgHeaderImage?.getAttribute('draggable') === 'false' &&
+              jpgHeaderImage.getAttribute('alt') === '' &&
+              jpgHeaderImage.getAttribute('aria-hidden') === 'true' &&
+              doc.defaultView.getComputedStyle(jpgHeaderImage).pointerEvents === 'none',
+            'Ảnh avatar header chưa có thuộc tính kéo, ARIA hoặc pointer-events an toàn.');
+            await assertHeaderMenuClick(
+              doc,
+              jpgHeaderImage,
+              'Avatar JPG trong header'
+            );
 
             const invalidFile = new doc.defaultView.File(
               ['not-an-image'],
@@ -409,6 +554,11 @@
             assert(pngDimensions.width === 512 && pngDimensions.height === 512,
               'Ảnh PNG không được cắt vuông và thu nhỏ đúng kích thước.');
             assertAvatarSynced(doc, pngAvatar);
+            await assertHeaderMenuClick(
+              doc,
+              doc.querySelector('#profileChip img.avatar-image'),
+              'Avatar PNG trong header'
+            );
 
             const webpFile = await createImageFile(
               doc,
@@ -432,6 +582,11 @@
             assert(webpDimensions.width === 512 && webpDimensions.height === 512,
               'Ảnh WebP không được cắt vuông và thu nhỏ đúng kích thước.');
             assertAvatarSynced(doc, webpAvatar);
+            await assertHeaderMenuClick(
+              doc,
+              doc.querySelector('#profileChip img.avatar-image'),
+              'Avatar WebP trong header'
+            );
 
             const imageModal = await openAvatarView(doc);
 
@@ -448,7 +603,7 @@
 
             const overlayModal = await openAvatarView(doc);
 
-            overlayModal.dispatchEvent(new doc.defaultView.MouseEvent('mousedown', {
+          overlayModal.dispatchEvent(new doc.defaultView.PointerEvent('pointerdown', {
               bubbles: true,
               button: 0
             }));
@@ -501,12 +656,16 @@
               return button.dataset.avatarColor.toLowerCase() !==
                 AuthService.getCurrentUser().avatarColor.toLowerCase();
             });
+            const storedBeforeProfileSave = Storage.rawInspect(
+              CONFIG.STORAGE.USERS
+            ).value.find(user => user.id === primaryUser.id);
 
             editButton.click();
-            profileName.value = updatedName;
-            profileForm.elements.email.value = updatedEmail;
+            profileName.value = `  ${updatedName}  `;
+            profileForm.elements.email.value = `  ${updatedEmail.toUpperCase()}  `;
             profileForm.elements.bio.value = updatedBio;
             newColorChoice.click();
+            await wait(2);
             profileForm.dispatchEvent(new doc.defaultView.Event('submit', {
               bubbles: true,
               cancelable: true
@@ -535,6 +694,10 @@
               doc.querySelectorAll('[data-current-user-name]')
             ).every(node => node.textContent === updatedName),
             'Tên người dùng ở header hoặc popover chưa đồng bộ ngay.');
+            assert(Array.from(
+              doc.querySelectorAll('[data-current-user-email]')
+            ).every(node => node.textContent === updatedEmail),
+            'Email ở header hoặc popover chưa đồng bộ ngay.');
             assertAvatarSynced(doc, webpAvatar);
 
             const usersAfterProfileSave = Storage.rawInspect(CONFIG.STORAGE.USERS);
@@ -545,9 +708,15 @@
             assert(usersAfterProfileSave.ok &&
               storedPrimary?.passwordHash === originalPasswordHash,
             'Cập nhật hồ sơ làm mất hoặc thay đổi passwordHash.');
+            assert(storedPrimary.id === storedBeforeProfileSave.id &&
+              storedPrimary.createdAt === storedBeforeProfileSave.createdAt &&
+              storedPrimary.updatedAt !== storedBeforeProfileSave.updatedAt,
+            'Cập nhật hồ sơ làm mất id/createdAt hoặc không cập nhật updatedAt.');
             assert(storedPrimary.role === 'Legacy profile role' &&
               storedPrimary.school === 'Legacy profile school',
             'Cập nhật hồ sơ làm mất dữ liệu role/school cũ trong LocalStorage.');
+            assert(storedPrimary.avatarImage === webpAvatar,
+              'Cập nhật hồ sơ làm mất avatarImage trong LocalStorage.');
 
             const ignoredLegacyPatch = AuthService.updateProfile({
               role: 'Giá trị không được phép',
@@ -562,11 +731,20 @@
             assert(ignoredLegacyPatch.ok &&
               storedAfterIgnoredPatch.role === 'Legacy profile role' &&
               storedAfterIgnoredPatch.school === 'Legacy profile school' &&
+              storedAfterIgnoredPatch.avatarImage === webpAvatar &&
               !Object.prototype.hasOwnProperty.call(
                 storedAfterIgnoredPatch,
                 'organization'
               ),
             'AuthService.updateProfile vẫn cập nhật trường hồ sơ không được phép.');
+
+            const sameEmailUpdate = AuthService.updateProfile({
+              email: `  ${updatedEmail.toUpperCase()}  `
+            });
+
+            assert(sameEmailUpdate.ok && sameEmailUpdate.data.email === updatedEmail &&
+              sameEmailUpdate.data.avatarImage === webpAvatar,
+            'Email hiện tại bị coi là trùng hoặc cập nhật Email làm mất avatarImage.');
 
             duplicateEmail =
               `profile-duplicate-${Date.now().toString(36)}@taskflow.test`;
@@ -584,20 +762,120 @@
               'Đăng ký tài khoản phụ đã làm thay đổi phiên tài khoản đang sửa.');
 
             editButton.click();
+            profileName.value = '   ';
             profileForm.elements.email.value = duplicateEmail;
+            profileForm.elements.bio.value = 'a'.repeat(241);
             profileForm.dispatchEvent(new doc.defaultView.Event('submit', {
               bubbles: true,
               cancelable: true
             }));
             await waitFor(() => {
-              return doc.querySelector('#profileEmailError').textContent.includes(
+              return doc.querySelector('#profileNameError').textContent.includes(
+                'Vui lòng nhập họ và tên.'
+              ) && doc.querySelector('#profileEmailError').textContent.includes(
                 'Email này đang thuộc tài khoản khác.'
+              ) && doc.querySelector('#profileBioError').textContent.includes(
+                '240 ký tự'
               );
-            }, 'Kiểm tra email trùng không hiển thị lỗi đúng.');
+            }, 'Validation hồ sơ chưa chặn tên trống, email trùng hoặc bio quá dài.');
             assert(AuthService.getCurrentUser().email === updatedEmail,
               'Email trùng vẫn ghi đè email hợp lệ của tài khoản.');
+
+            profileForm.elements.email.value = updatedEmail;
+            profileForm.elements.email.dispatchEvent(new doc.defaultView.Event('input', {
+              bubbles: true
+            }));
+            assert(!profileForm.elements.email.classList.contains('invalid') &&
+              !profileForm.elements.email.hasAttribute('aria-invalid') &&
+              doc.querySelector('#profileEmailError').textContent === '' &&
+              profileName.classList.contains('invalid') &&
+              doc.querySelector('#profileBio').classList.contains('invalid'),
+            'Nhập lại Email không xóa đúng lỗi riêng hoặc đã xóa lỗi trường khác.');
+
+            profileName.value = updatedName;
+            profileName.dispatchEvent(new doc.defaultView.Event('input', {
+              bubbles: true
+            }));
+            assert(!profileName.classList.contains('invalid') &&
+              doc.querySelector('#profileNameError').textContent === '' &&
+              doc.querySelector('#profileBio').classList.contains('invalid'),
+            'Nhập lại Họ tên chưa xóa đúng lỗi riêng của trường.');
+
+            profileForm.elements.bio.value = updatedBio;
+            profileForm.elements.bio.dispatchEvent(new doc.defaultView.Event('input', {
+              bubbles: true
+            }));
+            assert(!profileForm.elements.bio.classList.contains('invalid') &&
+              doc.querySelector('#profileBioError').textContent === '',
+            'Nhập lại Giới thiệu chưa xóa lỗi riêng của trường.');
+
+            doc.defaultView.eval(`
+              window.__profileSubmitCount = 0;
+              window.__originalUpdateProfile = AuthService.updateProfile;
+              AuthService.updateProfile = input => {
+                window.__profileSubmitCount += 1;
+                return window.__originalUpdateProfile(input);
+              };
+            `);
+            profileName.value = '';
+            profileForm.dispatchEvent(new doc.defaultView.Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            profileForm.dispatchEvent(new doc.defaultView.Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            await wait(20);
+            assert(doc.defaultView.__profileSubmitCount === 1 &&
+              !profileForm.querySelector('[type="submit"]').disabled,
+            'Bấm Lưu thay đổi nhiều lần đã xử lý hồ sơ nhiều hơn một lần.');
+            doc.defaultView.eval(`
+              AuthService.updateProfile = window.__originalUpdateProfile;
+              delete window.__originalUpdateProfile;
+            `);
+
+            const cancelAvatarFile = await createImageFile(
+              doc,
+              'image/jpeg',
+              'avatar-cancel-check.jpg'
+            );
+            const snapshotCancelColorChoice = Array.from(
+              doc.querySelectorAll('[data-avatar-color]')
+            ).find(button => {
+              return button.dataset.avatarColor.toLowerCase() !==
+                AuthService.getCurrentUser().avatarColor.toLowerCase();
+            });
+
+            profileName.value = 'Giá trị không lưu';
+            profileForm.elements.email.value = 'cancelled-change@taskflow.test';
+            profileForm.elements.bio.value = 'Giới thiệu không được lưu';
+            snapshotCancelColorChoice.click();
+            selectAvatarFile(doc, cancelAvatarFile);
+            await waitFor(() => !doc.querySelector('#avatarPreviewModal').hidden,
+              'Không mở được xem trước ảnh khi đang sửa hồ sơ.');
+            doc.querySelector('#saveAvatarImage').click();
+            await wait(230);
+            assert(AuthService.getCurrentUser().avatarImage === webpAvatar,
+              'Ảnh nháp đã bị lưu trước khi bấm Lưu thay đổi.');
             doc.querySelector('#cancelProfileEdit').click();
+            assert(profileName.value === updatedName &&
+              profileForm.elements.email.value === updatedEmail &&
+              profileForm.elements.bio.value === updatedBio &&
+              doc.querySelector('[data-avatar-color][aria-pressed="true"]')
+                ?.dataset.avatarColor === storedPrimary.avatarColor &&
+              doc.querySelector('#profileAvatar img.avatar-image')
+                ?.getAttribute('src') === webpAvatar &&
+              AuthService.getCurrentUser().avatarImage === webpAvatar,
+            'Hủy chỉnh sửa không khôi phục chính xác snapshot tên/email/bio/màu/ảnh.');
             primaryEmail = updatedEmail;
+
+            doc = await loadProfile();
+            assert(doc.querySelector('#profileName').value === updatedName &&
+              doc.querySelector('#profileEmail').value === updatedEmail &&
+              doc.querySelector('#profileBio').value === updatedBio &&
+              AuthService.getCurrentUser().avatarImage === webpAvatar,
+            'Dữ liệu hồ sơ hoặc ảnh đại diện không còn chính xác sau reload.');
 
             const avatarTrigger = doc.querySelector('#profileAvatarTrigger');
             const avatarMenu = doc.querySelector('#avatarMenu');
@@ -683,46 +961,406 @@
               profileActions.hidden,
             'Hủy chỉnh sửa không khôi phục tên, email, giới thiệu, màu hoặc ảnh đại diện.');
 
-            doc.querySelector('#openChangePassword').click();
-            await wait(150);
-            assert(!passwordModal.hidden && oldPassword.value === '' &&
-              oldPassword.getAttribute('autocomplete') === 'off',
-            'Modal đổi mật khẩu không mở an toàn với trường mật khẩu trống.');
-            passwordModal.querySelector('[data-change-password-close]').click();
-            await wait(220);
-            assert(passwordModal.hidden && oldPassword.value === '',
-              'Đóng modal chưa xóa mật khẩu hoặc chưa ẩn biểu mẫu.');
+            const restoredAvatar = AuthService.updateProfile({
+              avatarImage: webpAvatar
+            });
 
-            doc.querySelector('#openChangePassword').click();
+            assert(restoredAvatar.ok &&
+              AuthService.getCurrentUser().avatarImage === webpAvatar,
+            'Không thể chuẩn bị avatar để kiểm tra đổi mật khẩu giữ nguyên hồ sơ.');
+
+            const blankOldPassword = AuthService.changePassword({
+              oldPassword: '',
+              newPassword: '654321',
+              confirmPassword: '654321'
+            });
+            const wrongOldPassword = AuthService.changePassword({
+              oldPassword: 'sai-mat-khau',
+              newPassword: '654321',
+              confirmPassword: '654321'
+            });
+            const blankNewPassword = AuthService.changePassword({
+              oldPassword: '123456',
+              newPassword: '',
+              confirmPassword: ''
+            });
+            const shortNewPassword = AuthService.changePassword({
+              oldPassword: '123456',
+              newPassword: '123',
+              confirmPassword: '123'
+            });
+            const reusedPassword = AuthService.changePassword({
+              oldPassword: '123456',
+              newPassword: '123456',
+              confirmPassword: '123456'
+            });
+            const mismatchedPassword = AuthService.changePassword({
+              oldPassword: '123456',
+              newPassword: '654321',
+              confirmPassword: '654322'
+            });
+
+            assert(blankOldPassword.errors?.oldPassword &&
+              wrongOldPassword.errors?.oldPassword &&
+              blankNewPassword.errors?.newPassword &&
+              blankNewPassword.errors?.confirmPassword &&
+              shortNewPassword.errors?.newPassword &&
+              reusedPassword.errors?.newPassword &&
+              mismatchedPassword.errors?.confirmPassword,
+            'AuthService.changePassword chưa chặn đầy đủ các trường hợp validation.');
+
+            const storedBeforePassword = Storage.rawInspect(
+              CONFIG.STORAGE.USERS
+            ).value.find(user => user.id === primaryUser.id);
+            const openPasswordButton = doc.querySelector('#openChangePassword');
+            const newPassword = doc.querySelector('#newPassword');
+            const confirmPassword = doc.querySelector('#newPasswordConfirm');
+            const passwordAccountEmail = doc.querySelector('#passwordAccountEmail');
+            const deleteAccountEmail = doc.querySelector('#deleteAccountEmail');
+            const deletePasswordInput = doc.querySelector('#deletePasswordInput');
+            const deletePasswordModal = doc.querySelector('#deleteAccountModal');
+            const passwordDialog = passwordModal.querySelector('[role="dialog"]');
+            const visibilityButtons = Array.from(
+              passwordForm.querySelectorAll('[data-password-visibility]')
+            );
+
+            assert(passwordForm.getAttribute('autocomplete') !== 'off' &&
+              passwordAccountEmail?.name === 'username' &&
+              passwordAccountEmail.type === 'email' &&
+              passwordAccountEmail.autocomplete === 'username' &&
+              passwordAccountEmail.readOnly &&
+              deleteAccountEmail?.name === 'username' &&
+              deleteAccountEmail.type === 'email' &&
+              deleteAccountEmail.autocomplete === 'username' &&
+              deleteAccountEmail.readOnly &&
+              deletePasswordInput?.name === 'currentPassword' &&
+              deletePasswordInput.autocomplete === 'current-password',
+            'Form mật khẩu thiếu cặp username/current-password hợp lệ.');
+
+            openPasswordButton.click();
             await wait(150);
+            assert(!passwordModal.hidden &&
+              passwordModal.getAttribute('aria-hidden') === 'false' &&
+              passwordDialog.getAttribute('aria-modal') === 'true' &&
+              passwordDialog.getAttribute('aria-labelledby') ===
+                'changePasswordModalTitle' &&
+              passwordAccountEmail.value === AuthService.getCurrentUser().email &&
+              oldPassword.value === '' &&
+              oldPassword.getAttribute('autocomplete') === 'current-password' &&
+              newPassword.getAttribute('autocomplete') === 'new-password' &&
+              confirmPassword.getAttribute('autocomplete') === 'new-password' &&
+              doc.activeElement === oldPassword,
+            'Modal đổi mật khẩu thiếu semantics, autocomplete hoặc focus ban đầu.');
+            assert(passwordModal.querySelector('.modal-close')
+              .getBoundingClientRect().width >= 44 &&
+              visibilityButtons.every(button => {
+                const rect = button.getBoundingClientRect();
+
+                return rect.width >= 44 && rect.height >= 44;
+              }),
+            'Nút đóng hoặc nút hiện/ẩn mật khẩu nhỏ hơn 44 × 44px.');
+
+            const passwordDialogRect = passwordDialog.getBoundingClientRect();
+            const passwordModalBody = passwordModal.querySelector('.modal-body');
+            const passwordFooterButtons = Array.from(
+              passwordModal.querySelectorAll('.modal-footer .btn')
+            );
+
+            assert(passwordDialogRect.left >= -1 &&
+              passwordDialogRect.top >= -1 &&
+              passwordDialogRect.right <= doc.defaultView.innerWidth + 1 &&
+              passwordDialogRect.bottom <= doc.defaultView.innerHeight + 1 &&
+              doc.defaultView.getComputedStyle(passwordModalBody).overflowY === 'auto' &&
+              passwordFooterButtons.every(button => {
+                const rect = button.getBoundingClientRect();
+
+                return rect.left >= passwordDialogRect.left - 1 &&
+                  rect.right <= passwordDialogRect.right + 1 &&
+                  rect.bottom <= passwordDialogRect.bottom + 1;
+              }),
+            'Modal hoặc footer đổi mật khẩu vượt khỏi viewport đang kiểm tra.');
+
+            oldPassword.value = 'ky-tu-vua-nhap';
+            await wait(140);
+            assert(oldPassword.value === 'ky-tu-vua-nhap',
+              'Ký tự vừa nhập bị xóa sau hơn 100 ms.');
+
+            [oldPassword, newPassword, confirmPassword].forEach((input, index) => {
+              input.value = `gia-tri-${index}`;
+              visibilityButtons[index].click();
+              assert(input.type === 'text' &&
+                input.value === `gia-tri-${index}` &&
+                visibilityButtons[index].getAttribute('aria-label') ===
+                  'Ẩn mật khẩu',
+              'Nút hiện mật khẩu làm mất giá trị hoặc có aria-label sai.');
+            });
+
+            const focusable = Array.from(passwordModal.querySelectorAll(
+              'input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )).filter(element => element.getClientRects().length > 0);
+            const firstFocusable = focusable[0];
+            const lastFocusable = focusable[focusable.length - 1];
+
+            lastFocusable.focus();
+            lastFocusable.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', {
+              key: 'Tab',
+              bubbles: true,
+              cancelable: true
+            }));
+            assert(doc.activeElement === firstFocusable,
+              'Tab thoát khỏi cuối modal thay vì quay về phần tử đầu.');
+            firstFocusable.focus();
+            firstFocusable.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', {
+              key: 'Tab',
+              shiftKey: true,
+              bubbles: true,
+              cancelable: true
+            }));
+            assert(doc.activeElement === lastFocusable,
+              'Shift + Tab không quay về phần tử cuối modal.');
+
+            doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', {
+              key: 'Escape',
+              bubbles: true,
+              cancelable: true
+            }));
+            await wait(220);
+            assert(passwordModal.hidden &&
+              doc.activeElement === openPasswordButton &&
+              [oldPassword, newPassword, confirmPassword].every(input => {
+                return input.value === '' && input.type === 'password';
+              }) && visibilityButtons.every(button => {
+                return button.getAttribute('aria-label') === 'Hiện mật khẩu';
+              }),
+            'Escape chưa reset modal, đưa input về password hoặc trả focus.');
+
+            openPasswordButton.click();
+            await wait(100);
+            passwordModal.dispatchEvent(new doc.defaultView.PointerEvent('pointerdown', {
+              bubbles: true
+            }));
+            await wait(220);
+            assert(passwordModal.hidden && doc.activeElement === openPasswordButton,
+              'Pointer trên overlay không đóng modal hoặc không trả focus.');
+
+            openPasswordButton.click();
+            await wait(100);
+            passwordModal.querySelector('.modal-footer [data-change-password-close]')
+              .click();
+            await wait(220);
+            assert(passwordModal.hidden,
+              'Nút Hủy không đóng modal đổi mật khẩu.');
+
+            openPasswordButton.click();
+            await wait(100);
+            passwordModal.querySelector('.modal-header [data-change-password-close]')
+              .click();
+            await wait(220);
+            assert(passwordModal.hidden && doc.activeElement === openPasswordButton,
+              'Nút X không đóng modal hoặc không trả focus.');
+
+            doc.querySelector('#deleteAccount').click();
+            await waitFor(() => !doc.querySelector('#confirmModal').hidden,
+              'Không thể mở bước xác nhận xóa tài khoản.');
+            doc.querySelector('#confirmAcceptButton').click();
+            await waitFor(() => !deletePasswordModal.hidden,
+              'Không thể mở modal nhập mật khẩu để xóa tài khoản.');
+            assert(deleteAccountEmail.value === AuthService.getCurrentUser().email &&
+              deletePasswordInput.getAttribute('autocomplete') ===
+                'current-password',
+            'Modal xóa chưa ghép email hiện tại với current-password.');
+            deletePasswordModal.querySelector('[data-delete-password-close]').click();
+            await wait(220);
+            assert(deletePasswordModal.hidden,
+              'Không thể hủy modal xác nhận mật khẩu khi xóa tài khoản.');
+
+            openPasswordButton.click();
+            await wait(100);
+            passwordForm.dispatchEvent(new doc.defaultView.Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            await wait(20);
+            assert(doc.querySelector('#oldPasswordError').textContent &&
+              doc.querySelector('#newPasswordError').textContent &&
+              doc.querySelector('#newPasswordConfirmError').textContent &&
+              doc.activeElement === oldPassword &&
+              !passwordForm.querySelector('[type="submit"]').disabled,
+            'Form chưa hiển thị/focus lỗi trống hoặc chưa mở khóa submit.');
+
+            oldPassword.value = 'sai-mat-khau';
+            oldPassword.dispatchEvent(new doc.defaultView.Event('input', {
+              bubbles: true
+            }));
+            assert(doc.querySelector('#oldPasswordError').textContent === '' &&
+              doc.querySelector('#newPasswordError').textContent !== '',
+            'Nhập lại mật khẩu hiện tại đã xóa nhầm lỗi của trường khác.');
+            newPassword.value = '654321';
+            confirmPassword.value = '654321';
+
+            doc.defaultView.eval(`
+              window.__passwordSubmitCount = 0;
+              window.__originalChangePassword = AuthService.changePassword;
+              AuthService.changePassword = input => {
+                window.__passwordSubmitCount += 1;
+                window.__lastPasswordInput = input;
+                return window.__originalChangePassword(input);
+              };
+            `);
+            passwordForm.dispatchEvent(new doc.defaultView.Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            passwordForm.dispatchEvent(new doc.defaultView.Event('submit', {
+              bubbles: true,
+              cancelable: true
+            }));
+            await wait(20);
+            assert(doc.defaultView.__passwordSubmitCount === 1 &&
+              !Object.prototype.hasOwnProperty.call(
+                doc.defaultView.__lastPasswordInput,
+                'username'
+              ) &&
+              !passwordModal.hidden &&
+              !passwordForm.querySelector('[type="submit"]').disabled,
+            'Submit bị xử lý lặp hoặc đã gửi username vào AuthService.');
+            doc.defaultView.eval(`
+              AuthService.changePassword = window.__originalChangePassword;
+              delete window.__originalChangePassword;
+              delete window.__lastPasswordInput;
+            `);
+
             oldPassword.value = '123456';
-            doc.querySelector('#newPassword').value = '654321';
-            doc.querySelector('#newPasswordConfirm').value = '654321';
+            newPassword.value = '654321';
+            confirmPassword.value = '654321';
+            [oldPassword, newPassword, confirmPassword].forEach(input => {
+              input.dispatchEvent(new doc.defaultView.Event('input', {
+                bubbles: true
+              }));
+            });
             passwordForm.dispatchEvent(new doc.defaultView.Event('submit', {
               bubbles: true,
               cancelable: true
             }));
             await wait(220);
-            assert(passwordModal.hidden,
-              'Lưu mật khẩu mới không đóng modal.');
+            assert(passwordModal.hidden &&
+              [oldPassword, newPassword, confirmPassword].every(input => {
+                return input.value === '' && input.type === 'password';
+              }),
+            'Lưu mật khẩu mới không đóng và reset modal.');
 
+            const storedAfterPassword = Storage.rawInspect(
+              CONFIG.STORAGE.USERS
+            ).value.find(user => user.id === primaryUser.id);
+            const preservedProfileKeys = [
+              'id', 'createdAt', 'fullName', 'email', 'bio', 'avatarColor',
+              'avatarImage', 'role', 'school'
+            ];
+
+            assert(storedAfterPassword.passwordHash !==
+              storedBeforePassword.passwordHash &&
+              storedAfterPassword.updatedAt !== storedBeforePassword.updatedAt &&
+              preservedProfileKeys.every(key => {
+                return storedAfterPassword[key] === storedBeforePassword[key];
+              }) && storedAfterPassword.avatarImage === webpAvatar,
+            'Đổi mật khẩu làm mất ảnh đại diện hoặc dữ liệu hồ sơ khác.');
+
+            AuthService.logout();
+            const oldPasswordLogin = AuthService.login({
+              email: primaryEmail,
+              password: '123456',
+              remember: false
+            });
             const changedLogin = AuthService.login({
               email: primaryEmail,
               password: '654321',
               remember: false
             });
 
-            assert(changedLogin.ok,
-              'Cập nhật avatar đã làm mất passwordHash hoặc mật khẩu mới không được lưu.');
+            assert(!oldPasswordLogin.ok && changedLogin.ok,
+              'Mật khẩu cũ vẫn đăng nhập được hoặc mật khẩu mới không đăng nhập được.');
+            assert(AuthService.getCurrentUser().avatarImage === webpAvatar,
+              'Đăng nhập bằng mật khẩu mới làm mất avatarImage.');
             assert(AuthService.deleteAccount('654321').ok,
               'Không thể dọn tài khoản A kiểm tra.');
             primaryEmail = '';
 
+            const demoLogin = AuthService.login({
+              email: AuthService.getExperienceEmail(),
+              password: '123456',
+              remember: false
+            });
+
+            assert(demoLogin.ok,
+              'Không thể đăng nhập tài khoản trải nghiệm bằng mật khẩu mặc định.');
+
+            const demoBefore = Storage.rawInspect(CONFIG.STORAGE.USERS).value
+              .find(user => AuthService.isExperienceAccount(user));
+            const blockedDemoProfile = AuthService.updateProfile({
+              fullName: 'Không được lưu',
+              email: 'demo-changed@taskflow.test',
+              bio: 'Không được lưu'
+            });
+            const blockedDemoPassword = AuthService.changePassword({
+              oldPassword: '123456',
+              newPassword: '654321',
+              confirmPassword: '654321'
+            });
+            const blockedDemoDelete = AuthService.deleteAccount('123456');
+            const demoAfter = Storage.rawInspect(CONFIG.STORAGE.USERS).value
+              .find(user => user.id === demoBefore.id);
+
+            assert(blockedDemoProfile.errors?.general ===
+              'Tài khoản trải nghiệm không thể chỉnh sửa hồ sơ.' &&
+              blockedDemoPassword.errors?.general ===
+                'Tài khoản trải nghiệm không thể đổi mật khẩu.' &&
+              blockedDemoDelete.errors?.general ===
+                'Tài khoản trải nghiệm không thể xóa tài khoản.' &&
+              demoAfter.passwordHash === demoBefore.passwordHash &&
+              demoAfter.fullName === demoBefore.fullName &&
+              demoAfter.email === demoBefore.email,
+            'Service chưa chặn đủ thao tác hoặc đã làm thay đổi tài khoản trải nghiệm.');
+
+            doc = await loadProfile();
+            assert(!doc.querySelector('#experienceAccountNote').hidden &&
+              doc.querySelector('#editProfile').disabled &&
+              doc.querySelector('#editProfile').getAttribute('aria-disabled') === 'true' &&
+              doc.querySelector('#openChangePassword').disabled &&
+              doc.querySelector('#openChangePassword')
+                .getAttribute('aria-disabled') === 'true' &&
+              doc.querySelector('#deleteAccount').disabled &&
+              doc.querySelector('#deleteAccount')
+                .getAttribute('aria-disabled') === 'true' &&
+              doc.querySelector('#profileName').readOnly,
+            'Trang Hồ sơ chưa khóa và giải thích rõ tài khoản trải nghiệm.');
+            doc.querySelector('#openChangePassword').click();
+            await wait(120);
+            assert(doc.querySelector('#changePasswordModal').hidden,
+              'Tài khoản trải nghiệm vẫn mở được modal đổi mật khẩu.');
+
+            AuthService.logout();
+            const changedDemoLogin = AuthService.login({
+              email: AuthService.getExperienceEmail(),
+              password: '654321',
+              remember: false
+            });
+            const defaultDemoLogin = AuthService.login({
+              email: AuthService.getExperienceEmail(),
+              password: '123456',
+              remember: false
+            });
+
+            assert(!changedDemoLogin.ok && defaultDemoLogin.ok,
+              'Mật khẩu mặc định 123456 của tài khoản trải nghiệm đã thay đổi.');
+            AuthService.logout();
+
             output.textContent =
-              `PASS ${frame.contentWindow.innerWidth}px: bố cục hồ sơ mới, ` +
-              'lưu/hủy hồ sơ, email trùng, dữ liệu legacy, JPG/PNG/WebP, ' +
+              `PASS ${frame.contentWindow.innerWidth}×${frame.contentWindow.innerHeight}px: ` +
+              'profileChip một chạm, ' +
+              'hit-area 48px, modal/focus trap/Escape, bố cục hồ sơ mới, ' +
+              'validation/lưu/hủy hồ sơ, email trùng, dữ liệu legacy, JPG/PNG/WebP, ' +
               'kiểm tra tệp, nén/cắt 512px, lưu bền vững, cách ly tài khoản, ' +
-              'đồng bộ, xem/xóa avatar và đổi mật khẩu đều hoạt động đúng.';
+              'đồng bộ, xem/xóa avatar, đổi mật khẩu và khóa tài khoản trải nghiệm đều đúng.';
           } catch (error) {
             output.textContent = `FAIL: ${error.message}`;
           } finally {

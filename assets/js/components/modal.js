@@ -13,6 +13,19 @@ const Modal = (() => {
     '[tabindex]:not([tabindex="-1"])'
   ].join(',');
 
+  const focusableElements = overlay => {
+    if (!overlay) {
+      return [];
+    }
+
+    return Array.from(overlay.querySelectorAll(focusableSelector)).filter(element => {
+      return element instanceof HTMLElement &&
+        !element.hidden &&
+        element.getAttribute('aria-hidden') !== 'true' &&
+        element.getClientRects().length > 0;
+    });
+  };
+
   const resolveModalTrigger = () => {
     const focused = document.activeElement;
 
@@ -39,10 +52,54 @@ const Modal = (() => {
     target?.focus({ preventScroll: true });
   };
 
-  const handleEscape = event => {
-    if (event.key === 'Escape') {
-      close();
+  const trapFocus = event => {
+    if (event.key !== 'Tab' || !activeModal || activeModal.hidden) {
+      return;
     }
+
+    const focusable = focusableElements(activeModal);
+
+    if (!focusable.length) {
+      event.preventDefault();
+      activeModal.querySelector('[role="dialog"]')?.focus({
+        preventScroll: true
+      });
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const focused = document.activeElement;
+
+    if (!activeModal.contains(focused)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus({
+        preventScroll: true
+      });
+      return;
+    }
+
+    if (event.shiftKey && focused === first) {
+      event.preventDefault();
+      last.focus({
+        preventScroll: true
+      });
+    } else if (!event.shiftKey && focused === last) {
+      event.preventDefault();
+      first.focus({
+        preventScroll: true
+      });
+    }
+  };
+
+  const handleModalKeydown = event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      return;
+    }
+
+    trapFocus(event);
   };
 
   const bindFrame = (overlay, closeSelector = '') => {
@@ -58,7 +115,7 @@ const Modal = (() => {
       });
     }
 
-    overlay.addEventListener('mousedown', event => {
+    overlay.addEventListener('pointerdown', event => {
       const clickedBackdrop = event.target === overlay ||
         event.target.closest?.('[data-modal-backdrop]');
 
@@ -91,7 +148,7 @@ const Modal = (() => {
     overlay.setAttribute('aria-hidden', 'false');
     document.body.classList.add('modal-open');
     activeModal = overlay;
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('keydown', handleModalKeydown);
 
     const activate = () => {
       if (activeModal !== overlay) {
@@ -137,7 +194,7 @@ const Modal = (() => {
 
     if (wasActive) {
       activeModal = null;
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleModalKeydown);
     }
 
     overlay.classList.remove('visible');

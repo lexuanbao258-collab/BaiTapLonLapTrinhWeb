@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskFlow mobile interaction check</title>
+    <style>
+      html, body { margin: 0; overflow: hidden; }
+      #result { margin: 0; padding: 12px; white-space: pre-wrap; }
+      .pass { color: #047857; }
+      .fail { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <pre id="result">Đang kiểm tra thao tác mobile/tablet…</pre>
+
+    <script src="../assets/js/core/config.js"></script>
+    <script src="../assets/js/core/utils.js"></script>
+    <script src="../assets/js/core/storage.js"></script>
+    <script src="../assets/js/core/validators.js"></script>
+    <script src="../assets/js/services/auth-service.js"></script>
+    <script src="../assets/js/services/settings-service.js"></script>
+    <script src="../assets/js/services/activity-service.js"></script>
+    <script src="../assets/js/services/category-service.js"></script>
+    <script src="../assets/js/services/task-service.js"></script>
+    <script src="../assets/js/services/statistics-service.js"></script>
+    <script src="../assets/js/services/workspace-service.js"></script>
+    <script>
+      'use strict';
+
+      (() => {
+        const output = document.querySelector('#result');
+        const params = new URLSearchParams(location.search);
+        const requestedWidth = Number.parseInt(params.get('width') || '390', 10);
+        const requestedHeight = Number.parseInt(params.get('height') || '844', 10);
+        const viewportWidth = Number.isFinite(requestedWidth) ?
+          Math.max(320, requestedWidth) :
+          390;
+        const viewportHeight = Number.isFinite(requestedHeight) ?
+          Math.max(568, requestedHeight) :
+          844;
+        const frame = document.createElement('iframe');
+        const messages = [];
+        const storedSession = localStorage.getItem(CONFIG.STORAGE.SESSION);
+        const temporarySession = sessionStorage.getItem(CONFIG.STORAGE.SESSION);
+        const storedLastEmail = localStorage.getItem(CONFIG.STORAGE.LAST_EMAIL);
+        let testEmail = '';
+        let testTaskId = '';
+        let loadSequence = 0;
+
+        frame.setAttribute('aria-hidden', 'true');
+        frame.style.cssText = [
+          'position:fixed',
+          'inset:0 auto auto 0',
+          `width:${viewportWidth}px`,
+          `height:${viewportHeight}px`,
+          'border:0',
+          'visibility:hidden',
+          'pointer-events:none'
+        ].join(';');
+        document.body.appendChild(frame);
+
+        const wait = milliseconds => new Promise(resolve => {
+          window.setTimeout(resolve, milliseconds);
+        });
+
+        const assert = (condition, message) => {
+          if (!condition) {
+            throw new Error(message);
+          }
+        };
+
+        const waitFor = async (predicate, message, timeout = 5000) => {
+          const deadline = Date.now() + timeout;
+
+          while (Date.now() < deadline) {
+            if (predicate()) {
+              return;
+            }
+
+            await wait(35);
+          }
+
+          throw new Error(message);
+        };
+
+        const restoreStorageValue = (storageArea, key, value) => {
+          if (value === null) {
+            storageArea.removeItem(key);
+          } else {
+            storageArea.setItem(key, value);
+          }
+        };
+
+        const loadRoute = route => new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            reject(new Error(`${route}: tải trang quá thời gian.`));
+          }, 7000);
+          const separator = route.includes('?') ? '&' : '?';
+
+          frame.onload = () => {
+            window.setTimeout(() => {
+              window.clearTimeout(timeout);
+              resolve({
+                document: frame.contentDocument,
+                window: frame.contentWindow
+              });
+            }, 320);
+          };
+          loadSequence += 1;
+          frame.src = `../${route}${separator}mobileInteractionCheck=${loadSequence}`;
+        });
+
+        const waitForNextFrameLoad = () => new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            reject(new Error('Điều hướng tìm kiếm quá thời gian.'));
+          }, 7000);
+
+          frame.onload = () => {
+            window.setTimeout(() => {
+              window.clearTimeout(timeout);
+              resolve({
+                document: frame.contentDocument,
+                window: frame.contentWindow
+              });
+            }, 320);
+          };
+        });
+
+        const dispatchPointerDown = (win, target) => {
+          const EventConstructor = win.PointerEvent || win.MouseEvent;
+
+          target.dispatchEvent(new EventConstructor('pointerdown', {
+            bubbles: true,
+            cancelable: true,
+            pointerType: 'touch'
+          }));
+        };
+
+        const isVisible = (win, element) => {
+          if (!element || element.hidden) {
+            return false;
+          }
+
+          const style = win.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+
+          return style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            rect.width > 0 &&
+            rect.height > 0;
+        };
+
+        const assertTouchTarget = (win, element, label) => {
+          if (!isVisible(win, element)) {
+            return;
+          }
+
+          const rect = element.getBoundingClientRect();
+
+          assert(
+            rect.width >= 43.5 && rect.height >= 43.5,
+            `${label} chỉ có vùng bấm ${Math.round(rect.width)} × ${Math.round(rect.height)}px.`
+          );
+        };
+
+        const auditDocument = (route, doc, win) => {
+          assert(doc?.documentElement && doc.body, `${route}: DOM không đầy đủ.`);
+          assert(
+            win.eval('typeof App') === 'object',
+            `${route}: app.js không khởi tạo thành công.`
+          );
+          assert(
+            doc.querySelectorAll('button button').length === 0,
+            `${route}: còn button lồng trong button.`
+          );
+          assert(
+            doc.querySelectorAll('button:not([type])').length === 0,
+            `${route}: còn button thiếu type.`
+          );
+
+          const documentWidth = Math.max(
+            doc.documentElement.scrollWidth,
+            doc.body.scrollWidth
+          );
+
+          assert(
+            documentWidth <= win.innerWidth + 1,
+            `${route}: tràn ngang ${documentWidth}px trên viewport ${win.innerWidth}px.`
+          );
+
+          doc.querySelectorAll('button').forEach(button => {
+            const containsGraphic = Boolean(button.querySelector('svg, img'));
+            const hasText = Boolean(button.textContent.trim());
+
+            if (containsGraphic && !hasText) {
+              assert(
+                button.hasAttribute('aria-label') || button.hasAttribute('title'),
+                `${route}: nút chỉ có icon thiếu aria-label.`
+              );
+            }
+          });
+
+          const profileButton = doc.querySelector('#profileChip');
+
+          assert(profileButton?.tagName === 'BUTTON', `${route}: thiếu button #profileChip.`);
+          assert(
+            profileButton.querySelectorAll('button, a, input, select, textarea').length === 0,
+            `${route}: #profileChip chứa phần tử tương tác lồng nhau.`
+          );
+          assertTouchTarget(win, profileButton, `${route} #profileChip`);
+
+          if (win.innerWidth <= 1050) {
+            [
+              ['#themeToggle', 'nút đổi giao diện'],
+              ['#notificationBtn', 'nút thông báo'],
+              ['.task-check', 'nút hoàn thành task'],
+              ['.task-actions .icon-btn', 'nút tác vụ task'],
+              ['.pagination button', 'nút phân trang'],
+              ['.modal-close', 'nút đóng modal'],
+              ['.quick-filter-chips button', 'chip lọc nhanh'],
+              ['.calendar-nav .icon-btn', 'nút điều hướng lịch'],
+              ['.btn-mini', 'nút nhỏ'],
+              ['.task-title-button', 'tiêu đề mở chi tiết']
+            ].forEach(([selector, label]) => {
+              doc.querySelectorAll(selector).forEach(element => {
+                assertTouchTarget(win, element, `${route} ${label}`);
+              });
+            });
+          }
+
+          messages.push(`${route}: DOM, accessibility và overflow PASS`);
+        };
+
+        const prepareAccount = () => {
+          AuthService.logout();
+
+          const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+          testEmail = `mobile-check-${token}@taskflow.test`;
+          const registration = AuthService.register({
+            fullName: 'Kiểm thử Mobile',
+            email: testEmail,
+            password: '123456',
+            confirmPassword: '123456',
+            acceptTerms: true
+          });
+
+          assert(registration.ok, 'Không thể tạo tài khoản kiểm thử mobile.');
+          const login = AuthService.login({
+            email: testEmail,
+            password: '123456',
+            remember: true
+          });
+
+          assert(login.ok, 'Không thể đăng nhập tài khoản kiểm thử mobile.');
+          assert(
+            WorkspaceService.ensureUserWorkspace(),
+            'Không thể khởi tạo workspace kiểm thử mobile.'
+          );
+
+          const profileResult = AuthService.updateProfile({
+            avatarImage:
+              'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1/AAAAAASUVORK5CYII='
+          });
+
+          assert(profileResult.ok, 'Không thể chuẩn bị avatar kiểm thử.');
+          const taskResult = TaskService.createTask({
+            title: 'Công việc kiểm thử thao tác chạm',
+            description: 'Kiểm tra menu, trạng thái và mở chi tiết bằng một lần chạm.',
+            deadline: Utils.todayISO(),
+            priority: 'high',
+            status: 'todo',
+            categoryId: '',
+            estimate: 1,
+            progress: 0,
+            tags: ['mobile'],
+            notes: '',
+            pinned: false,
+            subtasks: []
+          });
+
+          assert(taskResult.ok, 'Không thể tạo task kiểm thử mobile.');
+          testTaskId = taskResult.data.id;
+        };
+
+        const testHeaderInteractions = async state => {
+          const { document: doc, window: win } = state;
+          const profileButton = doc.querySelector('#profileChip');
+          const profilePopover = doc.querySelector('#profilePopover');
+          const avatarImage = profileButton.querySelector('img');
+
+          assert(avatarImage, 'Avatar ảnh chưa hiển thị trong #profileChip.');
+          assert(
+            win.getComputedStyle(avatarImage).pointerEvents === 'none',
+            'Ảnh avatar header đang chặn pointer event.'
+          );
+
+          const clickTargets = [
+            avatarImage,
+            profileButton.querySelector('[data-current-user-name]'),
+            profileButton.querySelector('.profile-chevron')
+          ];
+
+          for (const target of clickTargets) {
+            target.dispatchEvent(new win.MouseEvent('click', {
+              bubbles: true,
+              cancelable: true
+            }));
+            await wait(30);
+            assert(!profilePopover.hidden, 'Một vùng trong profileChip không mở được menu.');
+            assert(
+              profileButton.getAttribute('aria-expanded') === 'true',
+              'aria-expanded của profileChip không chuyển thành true.'
+            );
+            profileButton.click();
+            await wait(25);
+            assert(profilePopover.hidden, 'Bấm lại profileChip không đóng menu.');
+          }
+
+          profileButton.click();
+          doc.body.dispatchEvent(new win.MouseEvent('click', {
+            bubbles: true,
+            cancelable: true
+          }));
+          assert(profilePopover.hidden, 'Bấm ngoài không đóng menu tài khoản.');
+
+          if (win.innerWidth <= 760) {
+            const menuButton = doc.querySelector('#mobileMenu');
+            const sidebar = doc.querySelector('#sidebar');
+            const backdrop = doc.querySelector('#sidebarBackdrop');
+
+            assertTouchTarget(win, menuButton, 'nút hamburger');
+            menuButton.click();
+            assert(sidebar.classList.contains('open'), 'Hamburger không mở sidebar.');
+            assert(backdrop.classList.contains('show'), 'Sidebar không hiện backdrop.');
+            assert(
+              menuButton.getAttribute('aria-expanded') === 'true',
+              'Hamburger không cập nhật aria-expanded.'
+            );
+            backdrop.click();
+            assert(!sidebar.classList.contains('open'), 'Backdrop không đóng sidebar.');
+          }
+
+          const searchContainer = doc.querySelector('[data-global-search]');
+          const searchToggle = doc.querySelector('#globalSearchToggle');
+          const searchClose = doc.querySelector('#globalSearchClose');
+          const searchInput = doc.querySelector('#globalSearch');
+
+          assert(searchContainer && searchToggle && searchClose && searchInput,
+            'Thiếu cấu trúc tìm kiếm dùng chung.');
+
+          if (win.innerWidth <= 760) {
+            assertTouchTarget(win, searchToggle, 'nút mở tìm kiếm');
+            searchToggle.click();
+            assert(
+              searchContainer.classList.contains('mobile-open'),
+              'Nút tìm kiếm không mở input trên mobile.'
+            );
+            assert(isVisible(win, searchInput), 'Input tìm kiếm vẫn bị ẩn sau khi mở.');
+            assert(doc.activeElement === searchInput, 'Input tìm kiếm không tự nhận focus.');
+            assert(
+              searchToggle.getAttribute('aria-expanded') === 'true',
+              'Nút tìm kiếm không cập nhật aria-expanded.'
+            );
+            assertTouchTarget(win, searchClose, 'nút đóng tìm kiếm');
+            doc.dispatchEvent(new win.KeyboardEvent('keydown', {
+              key: 'Escape',
+              bubbles: true,
+              cancelable: true
+            }));
+            assert(
+              !searchContainer.classList.contains('mobile-open'),
+              'Escape không đóng tìm kiếm mobile.'
+            );
+            assert(doc.activeElement === searchToggle, 'Escape không trả focus về nút tìm kiếm.');
+          } else {
+            searchToggle.click();
+            assert(doc.activeElement === searchInput, 'Icon tìm kiếm desktop không focus input.');
+          }
+
+          searchInput.blur();
+          doc.dispatchEvent(new win.KeyboardEvent('keydown', {
+            key: 'k',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true
+          }));
+          assert(doc.activeElement === searchInput,
+            'Ctrl+K không còn focus ô tìm kiếm.');
+          if (win.innerWidth <= 760) {
+            assert(searchContainer.classList.contains('mobile-open'),
+              'Ctrl+K không mở ô tìm kiếm trên mobile.');
+          }
+
+          searchInput.value = 'kiểm thử chạm';
+
+          if (win.innerWidth <= 760 &&
+              !searchContainer.classList.contains('mobile-open')) {
+            searchToggle.click();
+          }
+
+          const navigation = waitForNextFrameLoad();
+
+          searchInput.dispatchEvent(new win.KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+            cancelable: true
+          }));
+
+          const nextState = await navigation;
+          const nextUrl = new URL(nextState.window.location.href);
+
+          assert(
+            nextUrl.pathname.endsWith('/tasks.html') &&
+              nextUrl.searchParams.get('q') === 'kiểm thử chạm',
+            'Nhấn Enter không giữ luồng tìm kiếm hiện tại.'
+          );
+          messages.push('Header, sidebar và tìm kiếm: PASS');
+          return nextState;
+        };
+
+        const testKanban = async state => {
+          let { document: doc, window: win } = state;
+          let card = doc.querySelector(`[data-task-id="${testTaskId}"]`);
+
+          assert(card, 'Kanban không hiển thị task kiểm thử.');
+          assert(card.draggable, 'Kéo thả desktop của card Kanban đã bị mất.');
+
+          const titleButton = card.querySelector('.task-title-button');
+
+          assert(titleButton?.dataset.action === 'view',
+            'Tiêu đề task chưa có hành động xem chi tiết một chạm.');
+          titleButton.click();
+          await waitFor(
+            () => {
+              const modal = doc.querySelector('#taskDetailModal');
+
+              return !modal.hidden && modal.classList.contains('visible');
+            },
+            'Một chạm vào tiêu đề không mở modal chi tiết.'
+          );
+
+          const detailOverlay = doc.querySelector('#taskDetailModal');
+          const detailDialog = detailOverlay.querySelector('.modal');
+
+          dispatchPointerDown(win, detailDialog);
+          assert(
+            detailOverlay.classList.contains('visible'),
+            'Pointerdown bên trong làm đóng modal.'
+          );
+          dispatchPointerDown(win, detailOverlay);
+          await wait(230);
+          assert(detailOverlay.hidden, 'Pointerdown overlay không đóng modal.');
+
+          card = doc.querySelector(`[data-task-id="${testTaskId}"]`);
+          card.querySelector('[data-action="more"]').click();
+          await wait(180);
+
+          let menu = doc.querySelector('.task-context-menu');
+          let statusItems = [...menu.querySelectorAll('[data-action="status"]')];
+
+          assert(statusItems.length === 2,
+            'Menu task không chỉ hiển thị hai trạng thái khác trạng thái hiện tại.');
+          if (win.innerWidth <= 1050) {
+            statusItems.forEach(item => {
+              assertTouchTarget(win, item, 'mục đổi trạng thái Kanban');
+            });
+          }
+
+          menu.querySelector('[data-status="done"]').click();
+          await wait(80);
+
+          let storedTask = TaskService.getTaskById(testTaskId);
+
+          assert(storedTask.status === 'done', 'Không chuyển được task sang Hoàn thành.');
+          assert(storedTask.progress === 100, 'Hoàn thành không đồng bộ progress = 100.');
+          assert(storedTask.completedAt, 'Hoàn thành không ghi completedAt.');
+
+          const toastClose = doc.querySelector('.toast-close');
+
+          if (win.innerWidth <= 1050) {
+            assertTouchTarget(win, toastClose, 'nút đóng Toast');
+          }
+          toastClose.click();
+
+          card = doc.querySelector(`[data-task-id="${testTaskId}"]`);
+          card.querySelector('[data-action="more"]').click();
+          await wait(30);
+          menu = doc.querySelector('.task-context-menu');
+          menu.querySelector('[data-status="progress"]').click();
+          await wait(80);
+          storedTask = TaskService.getTaskById(testTaskId);
+
+          assert(storedTask.status === 'progress', 'Không chuyển được task sang Đang thực hiện.');
+          assert(storedTask.progress < 100, 'Đang thực hiện vẫn giữ progress = 100.');
+          assert(storedTask.completedAt === null, 'Đang thực hiện không xóa completedAt.');
+
+          state = await loadRoute('kanban.html');
+          doc = state.document;
+          win = state.window;
+          card = doc.querySelector(`[data-task-id="${testTaskId}"]`);
+          assert(
+            card?.closest('[data-drop-status]')?.dataset.dropStatus === 'progress',
+            'Trạng thái Kanban không còn sau reload.'
+          );
+          messages.push('Kanban đổi trạng thái, persistence và modal pointer: PASS');
+          return state;
+        };
+
+        const testProfileAvatarMenu = async state => {
+          const { document: doc, window: win } = state;
+          const trigger = doc.querySelector('#profileAvatarTrigger');
+          const menu = doc.querySelector('#avatarMenu');
+
+          assertTouchTarget(win, trigger, 'avatar lớn trang hồ sơ');
+          trigger.click();
+          assert(!menu.hidden, 'Avatar lớn không mở menu chọn/xem/xóa ảnh.');
+          menu.querySelectorAll('button:not([hidden])').forEach(item => {
+            assertTouchTarget(win, item, 'mục menu avatar');
+          });
+          menu.dispatchEvent(new win.KeyboardEvent('keydown', {
+            key: 'Escape',
+            bubbles: true,
+            cancelable: true
+          }));
+          assert(menu.hidden, 'Escape không đóng menu avatar.');
+          messages.push('Avatar lớn trang hồ sơ: PASS');
+        };
+
+        const testCategoryModal = async state => {
+          const { document: doc, window: win } = state;
+
+          doc.querySelector('#addCategory').click();
+          await wait(240);
+
+          const overlay = doc.querySelector('#categoryModal');
+          const dialog = overlay.querySelector('.modal');
+
+          assert(!overlay.hidden, 'Không mở được modal danh mục.');
+          if (win.innerWidth <= 1050) {
+            overlay.querySelectorAll('.emoji-picker button, .color-picker label')
+              .forEach(element => {
+                assertTouchTarget(win, element, 'lựa chọn danh mục');
+              });
+          }
+          dispatchPointerDown(win, dialog);
+          assert(overlay.classList.contains('visible'),
+            'Pointerdown trong modal danh mục làm đóng modal.');
+          dispatchPointerDown(win, overlay);
+          await wait(230);
+          assert(overlay.hidden, 'Pointerdown overlay không đóng modal danh mục.');
+          messages.push('Danh mục và overlay pointer: PASS');
+        };
+
+        const testCalendar = state => {
+          const { document: doc, window: win } = state;
+          const days = [...doc.querySelectorAll('.calendar-day')];
+
+          assert(days.length === 42, 'Lịch không hiển thị đủ 42 ô ngày.');
+          days.forEach(day => {
+            assertTouchTarget(win, day, 'ngày trên Calendar');
+          });
+
+          const selectedDate = days[10].dataset.date;
+
+          days[10].click();
+          assert(
+            doc.querySelector(`.calendar-day[data-date="${selectedDate}"]`)
+              .classList.contains('selected'),
+            'Một chạm không chọn được ngày trên Calendar.'
+          );
+          messages.push('Calendar touch targets: PASS');
+        };
+
+        const cleanup = () => {
+          try {
+            if (testEmail) {
+              const current = AuthService.getCurrentUser();
+
+              if (current?.email !== testEmail) {
+                AuthService.logout();
+                AuthService.login({
+                  email: testEmail,
+                  password: '123456',
+                  remember: true
+                });
+              }
+
+              AuthService.deleteAccount('123456');
+            }
+          } finally {
+            restoreStorageValue(
+              localStorage,
+              CONFIG.STORAGE.SESSION,
+              storedSession
+            );
+            restoreStorageValue(
+              sessionStorage,
+              CONFIG.STORAGE.SESSION,
+              temporarySession
+            );
+            restoreStorageValue(
+              localStorage,
+              CONFIG.STORAGE.LAST_EMAIL,
+              storedLastEmail
+            );
+            frame.remove();
+          }
+        };
+
+        const run = async () => {
+          try {
+            prepareAccount();
+
+            let state = await loadRoute('index.html');
+
+            auditDocument('index.html', state.document, state.window);
+            state = await testHeaderInteractions(state);
+            auditDocument('tasks.html', state.document, state.window);
+
+            state = await loadRoute('kanban.html');
+            auditDocument('kanban.html', state.document, state.window);
+            state = await testKanban(state);
+
+            state = await loadRoute('profile.html');
+            auditDocument('profile.html', state.document, state.window);
+            await testProfileAvatarMenu(state);
+
+            state = await loadRoute('categories.html');
+            auditDocument('categories.html', state.document, state.window);
+            await testCategoryModal(state);
+
+            state = await loadRoute('calendar.html');
+            auditDocument('calendar.html', state.document, state.window);
+            testCalendar(state);
+
+            for (const route of ['statistics.html', 'about.html']) {
+              state = await loadRoute(route);
+              auditDocument(route, state.document, state.window);
+            }
+
+            output.className = 'pass';
+            output.textContent = [
+              `PASS mobile/tablet ${viewportWidth} × ${viewportHeight}`,
+              ...messages
+            ].join('\n');
+          } catch (error) {
+            output.className = 'fail';
+            output.textContent =
+              `FAIL mobile/tablet ${viewportWidth} × ${viewportHeight}: ` +
+              `${error.stack || error.message}`;
+            console.error(error);
+          } finally {
+            cleanup();
+          }
+        };
+
+        run();
+      })();
+    </script>
+  </body>
+</html>

@@ -4,7 +4,7 @@ const DEFAULT_ACCENT_COLOR = '#6d5dfc';
 
 const CONFIG = Object.freeze({
   APP_NAME: 'TaskFlow',
-  VERSION: '1.7.0',
+  VERSION: '1.7.2',
   // These markers identify one-time compatibility work for data written by
   // releases that stored workspace values without a user suffix.
   LEGACY_CLEANUP_VERSION: '1.6.1',

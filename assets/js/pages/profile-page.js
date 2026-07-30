@@ -13,7 +13,9 @@
   const cancelProfileEditButton = document.querySelector('#cancelProfileEdit');
   const changePasswordModal = document.querySelector('#changePasswordModal');
   const openChangePasswordButton = document.querySelector('#openChangePassword');
+  const passwordAccountEmail = document.querySelector('#passwordAccountEmail');
   const deleteModal = document.querySelector('#deleteAccountModal');
+  const deleteAccountEmail = document.querySelector('#deleteAccountEmail');
   const deletePasswordInput = document.querySelector('#deletePasswordInput');
   const deletePasswordError = document.querySelector('#deletePasswordError');
   const deletePasswordConfirm = document.querySelector('#deletePasswordConfirm');
@@ -31,6 +33,8 @@
   const avatarViewModal = document.querySelector('#avatarViewModal');
   const avatarViewImage = document.querySelector('#avatarViewImage');
   const avatarViewFallback = document.querySelector('#avatarViewFallback');
+  const experienceAccountNote = document.querySelector('#experienceAccountNote');
+  const deleteAccountButton = document.querySelector('#deleteAccount');
   const ACCEPTED_AVATAR_TYPES = new Set([
     'image/jpeg',
     'image/png',
@@ -41,10 +45,11 @@
 
   let selectedColor = CONFIG.DEFAULT_ACCENT;
   let isProfileEditing = false;
-  let changePasswordModalTrigger = null;
   let deleteModalTrigger = null;
   let deletePasswordResolver = null;
   let pendingAvatarImage = '';
+  let profileSnapshot = null;
+  let profileDraftAvatarImage = null;
 
   const safeAvatarColor = color => {
     return /^#[0-9a-fA-F]{6}$/.test(String(color || '')) ?
@@ -60,12 +65,74 @@
     }
   };
 
+  const isExperienceUser = user => {
+    return AuthService.isExperienceAccount(user || AuthService.getCurrentUser());
+  };
+
+  const setProtectedButtonState = (button, protectedAccount) => {
+    if (!button) {
+      return;
+    }
+
+    button.disabled = protectedAccount;
+
+    if (protectedAccount) {
+      button.setAttribute('aria-disabled', 'true');
+    } else {
+      button.removeAttribute('aria-disabled');
+    }
+  };
+
+  const displayedProfileUser = () => {
+    const user = AuthService.getCurrentUser();
+
+    if (!user || !isProfileEditing || profileDraftAvatarImage === null) {
+      return user;
+    }
+
+    return {
+      ...user,
+      avatarColor: selectedColor,
+      avatarImage: profileDraftAvatarImage
+    };
+  };
+
+  const applyExperienceAccountState = user => {
+    const protectedAccount = isExperienceUser(user);
+
+    experienceAccountNote.hidden = !protectedAccount;
+    setProtectedButtonState(editProfileButton, protectedAccount);
+    setProtectedButtonState(openChangePasswordButton, protectedAccount);
+    setProtectedButtonState(deleteAccountButton, protectedAccount);
+    setProtectedButtonState(chooseAvatarButton, protectedAccount);
+    setProtectedButtonState(deleteAvatarButton, protectedAccount);
+    avatarFileInput.disabled = protectedAccount;
+    avatarTrigger.setAttribute(
+      'aria-label',
+      protectedAccount ? 'Mở menu xem ảnh đại diện' : 'Mở menu ảnh đại diện'
+    );
+
+    const avatarOverlayLabel = avatarTrigger.querySelector(
+      '.profile-avatar-overlay span'
+    );
+
+    if (avatarOverlayLabel) {
+      avatarOverlayLabel.textContent = protectedAccount ? 'Xem ảnh' : 'Đổi ảnh';
+    }
+
+    return protectedAccount;
+  };
+
   const updateAvatarMenuState = user => {
     if (!deleteAvatarButton) {
       return;
     }
 
+    const protectedAccount = isExperienceUser(user);
+
     deleteAvatarButton.hidden = !String(user?.avatarImage || '').trim();
+    setProtectedButtonState(chooseAvatarButton, protectedAccount);
+    setProtectedButtonState(deleteAvatarButton, protectedAccount);
   };
 
   const showAvatarFallback = (target, user) => {
@@ -117,7 +184,9 @@
 
   const visibleAvatarMenuItems = () => {
     return Array.from(
-      avatarMenu?.querySelectorAll('[role="menuitem"]:not([hidden])') || []
+      avatarMenu?.querySelectorAll(
+        '[role="menuitem"]:not([hidden]):not([disabled])'
+      ) || []
     );
   };
 
@@ -141,7 +210,7 @@
       return;
     }
 
-    updateAvatarMenuState(AuthService.getCurrentUser());
+    updateAvatarMenuState(displayedProfileUser());
     avatarMenu.hidden = false;
     avatarTrigger.setAttribute('aria-expanded', 'true');
 
@@ -317,7 +386,7 @@
   };
 
   const openAvatarView = () => {
-    const user = AuthService.getCurrentUser();
+    const user = displayedProfileUser();
 
     if (!user) {
       location.replace('login.html');
@@ -348,7 +417,20 @@
       return;
     }
 
+    if (isExperienceUser()) {
+      UI.toast('Tài khoản trải nghiệm không thể chỉnh sửa hồ sơ.', 'error');
+      return;
+    }
+
     saveAvatarButton.disabled = true;
+
+    if (isProfileEditing) {
+      profileDraftAvatarImage = pendingAvatarImage;
+      renderProfileAvatar(displayedProfileUser());
+      Modal.close(avatarPreviewModal);
+      UI.toast('Ảnh đại diện mới sẽ được lưu cùng hồ sơ.');
+      return;
+    }
 
     const result = AuthService.updateProfile({
       avatarImage: pendingAvatarImage
@@ -366,7 +448,7 @@
   };
 
   const deleteCurrentAvatar = async () => {
-    const user = AuthService.getCurrentUser();
+    const user = displayedProfileUser();
 
     closeAvatarMenu(false);
     avatarTrigger.focus({
@@ -378,6 +460,11 @@
       return;
     }
 
+    if (isExperienceUser(user)) {
+      UI.toast('Tài khoản trải nghiệm không thể chỉnh sửa hồ sơ.', 'error');
+      return;
+    }
+
     const approved = await UI.confirm({
       title: 'Xóa ảnh đại diện?',
       message: 'Ảnh đã tải lên sẽ bị xóa. Hồ sơ của bạn sẽ quay về avatar chữ viết tắt và màu hiện tại.',
@@ -386,6 +473,13 @@
     });
 
     if (!approved) {
+      return;
+    }
+
+    if (isProfileEditing) {
+      profileDraftAvatarImage = '';
+      renderProfileAvatar(displayedProfileUser());
+      UI.toast('Ảnh đại diện sẽ được xóa khi bạn lưu hồ sơ.');
       return;
     }
 
@@ -450,6 +544,7 @@
     profileForm.elements.bio.value = AuthService.publicBio(user);
 
     updateAvatarChoices();
+    applyExperienceAccountState(user);
 
     return true;
   };
@@ -465,7 +560,7 @@
   };
 
   const setProfileEditMode = editable => {
-    isProfileEditing = Boolean(editable);
+    isProfileEditing = Boolean(editable) && !isExperienceUser();
     profileForm.setAttribute('aria-readonly', String(!isProfileEditing));
 
     profileForm.querySelectorAll('input, textarea').forEach(field => {
@@ -486,11 +581,21 @@
   };
 
   const startProfileEdit = () => {
-    if (isProfileEditing) {
+    if (isProfileEditing || isExperienceUser()) {
       return;
     }
 
     fillProfile();
+    const user = AuthService.getCurrentUser();
+
+    profileSnapshot = {
+      fullName: profileForm.elements.fullName.value,
+      email: profileForm.elements.email.value,
+      bio: profileForm.elements.bio.value,
+      avatarColor: selectedColor,
+      avatarImage: String(user?.avatarImage || '')
+    };
+    profileDraftAvatarImage = profileSnapshot.avatarImage;
     setProfileEditMode(true);
     profileForm.elements.fullName.focus();
   };
@@ -500,7 +605,23 @@
       return;
     }
 
-    fillProfile();
+    const user = AuthService.getCurrentUser();
+
+    if (profileSnapshot) {
+      profileForm.elements.fullName.value = profileSnapshot.fullName;
+      profileForm.elements.email.value = profileSnapshot.email;
+      profileForm.elements.bio.value = profileSnapshot.bio;
+      selectedColor = profileSnapshot.avatarColor;
+      renderProfileAvatar({
+        ...user,
+        avatarColor: profileSnapshot.avatarColor,
+        avatarImage: profileSnapshot.avatarImage
+      });
+      updateAvatarChoices();
+    }
+
+    profileSnapshot = null;
+    profileDraftAvatarImage = null;
     setProfileEditMode(false);
   };
 
@@ -524,91 +645,96 @@
     form.querySelector('.invalid')?.focus();
   };
 
-  const finishSubmit = (form, button) => {
-    delete form.dataset.submitting;
-    button.disabled = false;
+  const setSubmitting = (form, active, busyLabel) => {
+    const button = form.querySelector('[type="submit"]');
+    const label = button?.querySelector('[data-submit-label]');
+
+    if (!button) {
+      return;
+    }
+
+    if (!button.dataset.idleLabel && label) {
+      button.dataset.idleLabel = label.textContent.trim();
+    }
+
+    button.disabled = active;
+    form.setAttribute('aria-busy', String(active));
+
+    if (active) {
+      form.dataset.submitting = '1';
+    } else {
+      delete form.dataset.submitting;
+    }
+
+    if (label) {
+      label.textContent = active ? busyLabel : button.dataset.idleLabel;
+    }
+  };
+
+  const resetPasswordVisibility = () => {
+    passwordForm.querySelectorAll('[data-password-visibility]').forEach(button => {
+      const input = passwordForm.querySelector(
+        '#' + button.dataset.passwordVisibility
+      );
+
+      if (input) {
+        input.type = 'password';
+      }
+
+      button.classList.remove('visible');
+      button.setAttribute('aria-label', 'Hiện mật khẩu');
+      button.setAttribute('aria-pressed', 'false');
+      button.innerHTML = Icons.render('eye', 18);
+    });
   };
 
   const resetPasswordForm = () => {
     passwordForm.reset();
     clearErrors(passwordForm, 'data-password-error');
-    delete passwordForm.dataset.submitting;
-
-    const submitButton = passwordForm.querySelector('[type="submit"]');
-
-    if (submitButton) {
-      submitButton.disabled = false;
-    }
+    resetPasswordVisibility();
+    setSubmitting(passwordForm, false, 'Đang cập nhật...');
   };
-
-  function handleChangePasswordModalKeydown(event) {
-    if (event.key === 'Escape') {
-      closeChangePasswordModal();
-    }
-  }
 
   function closeChangePasswordModal() {
     if (!changePasswordModal || changePasswordModal.hidden) {
       return;
     }
 
-    const trigger = changePasswordModalTrigger;
-
-    changePasswordModalTrigger = null;
-    resetPasswordForm();
-    changePasswordModal.classList.remove('visible');
-    changePasswordModal.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('modal-open');
-    document.removeEventListener('keydown', handleChangePasswordModalKeydown);
-
-    window.setTimeout(() => {
-      changePasswordModal.hidden = true;
-
-      if (trigger instanceof HTMLElement && trigger.isConnected) {
-        trigger.focus({
-          preventScroll: true
-        });
-      }
-    }, 180);
+    Modal.close(changePasswordModal);
   }
 
   const openChangePasswordModal = () => {
-    if (!changePasswordModal || changePasswordModal.hidden === false) {
+    if (
+      !changePasswordModal ||
+      changePasswordModal.hidden === false ||
+      isExperienceUser()
+    ) {
       return;
     }
 
-    changePasswordModalTrigger = document.activeElement;
     resetPasswordForm();
-    changePasswordModal.hidden = false;
-    changePasswordModal.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('modal-open');
-    document.addEventListener('keydown', handleChangePasswordModalKeydown);
+    const currentUser = AuthService.getCurrentUser();
 
-    requestAnimationFrame(() => {
-      changePasswordModal.classList.add('visible');
-      passwordForm.elements.oldPassword.value = '';
-      passwordForm.elements.oldPassword.focus();
+    passwordForm.elements.username.value = currentUser?.email || '';
+    openChangePasswordButton.focus({
+      preventScroll: true
     });
-
-    window.setTimeout(() => {
-      if (!changePasswordModal.hidden) {
-        passwordForm.elements.oldPassword.value = '';
-      }
-    }, 100);
+    Modal.showFrame(changePasswordModal, {
+      onOpen: () => {
+        passwordForm.elements.oldPassword.focus({
+          preventScroll: true
+        });
+      },
+      onClose: resetPasswordForm
+    });
   };
 
   const bindChangePasswordModal = () => {
     openChangePasswordButton.addEventListener('click', openChangePasswordModal);
-
-    changePasswordModal.querySelectorAll('[data-change-password-close]').forEach(button => {
-      button.addEventListener('click', closeChangePasswordModal);
-    });
-
-    changePasswordModal.addEventListener('mousedown', event => {
-      if (event.target === changePasswordModal) {
-        closeChangePasswordModal();
-      }
-    });
+    Modal.bindFrame(
+      changePasswordModal,
+      '[data-change-password-close]'
+    );
   };
 
   function handleDeleteModalKeydown(event) {
@@ -640,6 +766,7 @@
     window.setTimeout(() => {
       deleteModal.hidden = true;
       deleteModal.setAttribute('aria-hidden', 'true');
+      deleteAccountEmail.value = '';
       deletePasswordInput.value = '';
       deletePasswordInput.classList.remove('invalid');
       deletePasswordInput.removeAttribute('aria-invalid');
@@ -663,6 +790,7 @@
 
     deleteModalTrigger = document.activeElement;
     deletePasswordResolver = resolve;
+    deleteAccountEmail.value = AuthService.getCurrentUser()?.email || '';
     deletePasswordInput.value = '';
     deletePasswordError.textContent = '';
     deleteModal.hidden = false;
@@ -683,7 +811,7 @@
       });
     });
 
-    deleteModal?.addEventListener('mousedown', event => {
+    deleteModal?.addEventListener('pointerdown', event => {
       if (event.target === deleteModal) {
         closeDeletePasswordModal(null);
       }
@@ -707,6 +835,52 @@
       }
 
       closeDeletePasswordModal(password);
+    });
+  };
+
+  const bindFieldErrorCleanup = (form, attribute) => {
+    form.addEventListener('input', event => {
+      const field = event.target;
+
+      if (!(field instanceof HTMLElement) || !field.getAttribute('name')) {
+        return;
+      }
+
+      field.classList.remove('invalid');
+      field.removeAttribute('aria-invalid');
+
+      const errorElement = form.querySelector(
+        '[' + attribute + '="' + field.getAttribute('name') + '"]'
+      );
+
+      if (errorElement) {
+        errorElement.textContent = '';
+      }
+    });
+  };
+
+  const bindPasswordVisibility = () => {
+    passwordForm.querySelectorAll('[data-password-visibility]').forEach(button => {
+      button.addEventListener('click', () => {
+        const input = passwordForm.querySelector(
+          '#' + button.dataset.passwordVisibility
+        );
+
+        if (!input) {
+          return;
+        }
+
+        const willShow = input.type === 'password';
+
+        input.type = willShow ? 'text' : 'password';
+        button.classList.toggle('visible', willShow);
+        button.setAttribute(
+          'aria-label',
+          willShow ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'
+        );
+        button.setAttribute('aria-pressed', String(willShow));
+        button.innerHTML = Icons.render(willShow ? 'eyeOff' : 'eye', 18);
+      });
     });
   };
 
@@ -771,6 +945,10 @@
     });
 
     chooseAvatarButton.addEventListener('click', () => {
+      if (isExperienceUser()) {
+        return;
+      }
+
       closeAvatarMenu(false);
       avatarTrigger.focus({
         preventScroll: true
@@ -783,7 +961,7 @@
 
       avatarFileInput.value = '';
 
-      if (!file) {
+      if (!file || isExperienceUser()) {
         return;
       }
 
@@ -801,7 +979,7 @@
           'error'
         );
       } finally {
-        avatarFileInput.disabled = false;
+        avatarFileInput.disabled = isExperienceUser();
       }
     });
 
@@ -838,27 +1016,43 @@
     editProfileButton.addEventListener('click', startProfileEdit);
     cancelProfileEditButton.addEventListener('click', cancelProfileEdit);
 
-    profileForm.addEventListener('submit', event => {
+    profileForm.addEventListener('submit', async event => {
       event.preventDefault();
 
-      if (!isProfileEditing || profileForm.dataset.submitting === '1') {
+      if (
+        !isProfileEditing ||
+        profileForm.dataset.submitting === '1' ||
+        isExperienceUser()
+      ) {
         return;
       }
 
-      profileForm.dataset.submitting = '1';
-
-      const submitButton = profileForm.querySelector('[type="submit"]');
-
-      submitButton.disabled = true;
+      setSubmitting(profileForm, true, 'Đang lưu...');
       clearErrors(profileForm, 'data-profile-error');
 
-      const result = AuthService.updateProfile({
-        fullName: profileForm.elements.fullName.value,
-        email: profileForm.elements.email.value,
-        bio: profileForm.elements.bio.value,
-        avatarColor: selectedColor,
-        avatarImage: AuthService.getCurrentUser()?.avatarImage || ''
-      });
+      let result;
+
+      try {
+        result = await Promise.resolve().then(() => {
+          return AuthService.updateProfile({
+            fullName: profileForm.elements.fullName.value,
+            email: profileForm.elements.email.value,
+            bio: profileForm.elements.bio.value,
+            avatarColor: selectedColor,
+            avatarImage: profileDraftAvatarImage ??
+              AuthService.getCurrentUser()?.avatarImage ?? ''
+          });
+        });
+      } catch (error) {
+        result = {
+          ok: false,
+          errors: {
+            general: 'Không thể cập nhật hồ sơ lúc này. Vui lòng thử lại.'
+          }
+        };
+      } finally {
+        setSubmitting(profileForm, false, 'Đang lưu...');
+      }
 
       if (!result.ok) {
         showErrors(profileForm, result.errors, 'data-profile-error');
@@ -871,11 +1065,11 @@
           UI.mutationErrorMessage(result, hasFieldErrors),
           'error'
         );
-        finishSubmit(profileForm, submitButton);
         return;
       }
 
-      finishSubmit(profileForm, submitButton);
+      profileSnapshot = null;
+      profileDraftAvatarImage = null;
       fillProfile();
       setProfileEditMode(false);
       UI.toast('Đã cập nhật hồ sơ cá nhân.');
@@ -883,25 +1077,41 @@
   };
 
   const bindPasswordForm = () => {
-    passwordForm.addEventListener('submit', event => {
+    passwordForm.addEventListener('submit', async event => {
       event.preventDefault();
 
-      if (changePasswordModal.hidden || passwordForm.dataset.submitting === '1') {
+      if (
+        changePasswordModal.hidden ||
+        !changePasswordModal.classList.contains('visible') ||
+        passwordForm.dataset.submitting === '1' ||
+        isExperienceUser()
+      ) {
         return;
       }
 
-      passwordForm.dataset.submitting = '1';
-
-      const submitButton = passwordForm.querySelector('[type="submit"]');
-
-      submitButton.disabled = true;
+      setSubmitting(passwordForm, true, 'Đang cập nhật...');
       clearErrors(passwordForm, 'data-password-error');
 
-      const result = AuthService.changePassword({
-        oldPassword: passwordForm.elements.oldPassword.value,
-        newPassword: passwordForm.elements.newPassword.value,
-        confirmPassword: passwordForm.elements.confirmPassword.value
-      });
+      let result;
+
+      try {
+        result = await Promise.resolve().then(() => {
+          return AuthService.changePassword({
+            oldPassword: passwordForm.elements.oldPassword.value,
+            newPassword: passwordForm.elements.newPassword.value,
+            confirmPassword: passwordForm.elements.confirmPassword.value
+          });
+        });
+      } catch (error) {
+        result = {
+          ok: false,
+          errors: {
+            general: 'Không thể đổi mật khẩu lúc này. Vui lòng thử lại.'
+          }
+        };
+      } finally {
+        setSubmitting(passwordForm, false, 'Đang cập nhật...');
+      }
 
       if (!result.ok) {
         showErrors(passwordForm, result.errors, 'data-password-error');
@@ -914,11 +1124,9 @@
           UI.mutationErrorMessage(result, hasFieldErrors),
           'error'
         );
-        finishSubmit(passwordForm, submitButton);
         return;
       }
 
-      finishSubmit(passwordForm, submitButton);
       closeChangePasswordModal();
       UI.toast('Đổi mật khẩu thành công.');
     });
@@ -926,7 +1134,7 @@
 
   const bindActions = () => {
     avatarColors.addEventListener('click', event => {
-      if (!isProfileEditing) {
+      if (!isProfileEditing || isExperienceUser()) {
         return;
       }
 
@@ -951,7 +1159,12 @@
       location.replace('login.html?loggedOut=1');
     });
 
-    document.querySelector('#deleteAccount').addEventListener('click', async () => {
+    deleteAccountButton.addEventListener('click', async () => {
+      if (isExperienceUser()) {
+        UI.toast('Tài khoản trải nghiệm không thể xóa tài khoản.', 'error');
+        return;
+      }
+
       const approved = await UI.confirm({
         title: 'Xóa tài khoản này?',
         message: 'Toàn bộ dữ liệu công việc của tài khoản sẽ bị xóa vĩnh viễn. Hãy tạo bản sao lưu trong Cài đặt & dữ liệu trước nếu bạn muốn lưu lại.',
@@ -985,11 +1198,14 @@
 
   if (!profileForm || !passwordForm || !avatarColors || !editProfileButton ||
     !profileFormActions || !cancelProfileEditButton || !changePasswordModal ||
-    !openChangePasswordButton || !profileAvatar || !avatarControl ||
-    !avatarTrigger || !avatarMenu || !avatarFileInput || !chooseAvatarButton ||
-    !viewAvatarButton || !deleteAvatarButton || !avatarPreviewModal ||
-    !avatarPreviewImage || !saveAvatarButton || !avatarViewModal ||
-    !avatarViewImage || !avatarViewFallback) {
+    !openChangePasswordButton || !passwordAccountEmail || !deleteModal ||
+    !deleteAccountEmail || !deletePasswordInput || !deletePasswordError ||
+    !deletePasswordConfirm || !profileAvatar || !avatarControl || !avatarTrigger ||
+    !avatarMenu || !avatarFileInput || !chooseAvatarButton || !viewAvatarButton ||
+    !deleteAvatarButton || !avatarPreviewModal || !avatarPreviewImage ||
+    !saveAvatarButton || !avatarViewModal || !avatarViewImage ||
+    !avatarViewFallback || !experienceAccountNote || !deleteAccountButton ||
+    passwordForm.querySelectorAll('[data-password-visibility]').length !== 3) {
     console.error('Trang hồ sơ thiếu các phần tử HTML bắt buộc.');
     return;
   }
@@ -1001,6 +1217,9 @@
   setProfileEditMode(false);
   bindProfileForm();
   bindPasswordForm();
+  bindFieldErrorCleanup(profileForm, 'data-profile-error');
+  bindFieldErrorCleanup(passwordForm, 'data-password-error');
+  bindPasswordVisibility();
   bindChangePasswordModal();
   bindDeleteModal();
   bindAvatarActions();

@@ -76,6 +76,7 @@ const TaskCard = (() => {
     const estimate = Number(task.estimate);
     const hasEstimate = Number.isFinite(estimate) && estimate > 0;
     const safeTaskId = Utils.escapeHTML(task.id);
+    const safeTaskTitle = Utils.escapeHTML(task.title);
 
     return `
       <article
@@ -89,7 +90,14 @@ const TaskCard = (() => {
             ${Icons.render(task.status === 'done' ? 'checkCircle' : 'circle', 22)}
           </button>
           <div class="task-title-wrap">
-            <h3>${Utils.escapeHTML(task.title)}</h3>
+            <h3>
+              <button
+                class="task-title-button"
+                type="button"
+                data-action="view"
+                aria-label="Xem chi tiết công việc: ${safeTaskTitle}"
+              >${safeTaskTitle}</button>
+            </h3>
             <div class="task-badges">${priorityBadge(task.priority)}${statusBadge(task.status)}</div>
           </div>
           <div class="task-actions">
@@ -99,7 +107,8 @@ const TaskCard = (() => {
               ${Icons.render('pin', 18)}
             </button>
             <button class="icon-btn" type="button" data-action="more" title="Tác vụ"
-              aria-label="Mở menu tác vụ công việc">
+              aria-label="Mở menu tác vụ công việc"
+              aria-haspopup="menu" aria-expanded="false">
               ${Icons.render('more', 19)}
             </button>
           </div>
@@ -124,6 +133,7 @@ const TaskCard = (() => {
   const renderRow = task => {
     const progress = getProgress(task);
     const safeTaskId = Utils.escapeHTML(task.id);
+    const safeTaskTitle = Utils.escapeHTML(task.title);
     const formattedDeadline = Utils.escapeHTML(Utils.formatDate(task.deadline));
     const relativeDeadline = Utils.escapeHTML(Utils.relativeDate(task.deadline));
 
@@ -134,7 +144,14 @@ const TaskCard = (() => {
         </button>
         <div class="task-row-main">
           <div class="task-row-title">
-            <h3>${Utils.escapeHTML(task.title)}</h3>
+            <h3>
+              <button
+                class="task-title-button"
+                type="button"
+                data-action="view"
+                aria-label="Xem chi tiết công việc: ${safeTaskTitle}"
+              >${safeTaskTitle}</button>
+            </h3>
             ${task.pinned ? Icons.render('pin', 14, 'pin-mark') : ''}
           </div>
           <p>${Utils.escapeHTML(task.description)}</p>
@@ -153,7 +170,9 @@ const TaskCard = (() => {
             aria-label="${task.pinned ? 'Bỏ ghim công việc' : 'Ghim công việc'}">
             ${Icons.render('pin', 18)}
           </button>
-          <button class="icon-btn" type="button" data-action="more" aria-label="Mở menu tác vụ công việc">
+          <button class="icon-btn" type="button" data-action="more"
+            aria-label="Mở menu tác vụ công việc"
+            aria-haspopup="menu" aria-expanded="false">
             ${Icons.render('more', 19)}
           </button>
         </div>
@@ -178,37 +197,109 @@ const TaskCard = (() => {
   `;
 
   const openMenu = (task, anchor) => {
-    document.querySelector('.context-menu')?.remove();
+    const existingMenu = document.querySelector('.task-context-menu');
+
+    if (typeof existingMenu?.taskFlowClose === 'function') {
+      existingMenu.taskFlowClose(false);
+    } else {
+      existingMenu?.remove();
+    }
 
     const menu = document.createElement('div');
+    const statusActions = CONFIG.STATUSES
+      .filter(status => status.value !== task.status)
+      .map(status => `
+        <button
+          type="button"
+          role="menuitem"
+          data-action="status"
+          data-status="${Utils.escapeHTML(status.value)}"
+        >
+          ${Icons.render(status.icon, 17)}
+          Chuyển sang ${Utils.escapeHTML(status.label)}
+        </button>
+      `)
+      .join('');
 
-    menu.className = 'context-menu';
+    menu.className = 'context-menu task-context-menu';
+    menu.id = 'taskContextMenu';
     menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Tác vụ công việc');
     menu.dataset.taskId = String(task.id || '');
+    anchor.setAttribute('aria-controls', menu.id);
+    anchor.setAttribute('aria-expanded', 'true');
     menu.innerHTML = `
       <button type="button" role="menuitem" data-action="view">${Icons.render('eye', 17)}Xem chi tiết</button>
       <button type="button" role="menuitem" data-action="edit">${Icons.render('edit', 17)}Chỉnh sửa</button>
       <button type="button" role="menuitem" data-action="duplicate">${Icons.render('copy', 17)}Nhân bản</button>
       <button type="button" role="menuitem" data-action="pin">${Icons.render('pin', 17)}${task.pinned ? 'Bỏ ghim' : 'Ghim công việc'}</button>
       <hr>
+      <div class="context-menu-status" role="group" aria-label="Chuyển trạng thái">
+        ${statusActions}
+      </div>
+      <hr>
       <button type="button" role="menuitem" class="danger" data-action="delete">${Icons.render('trash', 17)}Xóa công việc</button>
     `;
     document.body.appendChild(menu);
 
     const rect = anchor.getBoundingClientRect();
-    const width = 210;
+    const width = menu.offsetWidth || 232;
 
     menu.style.left = `${Math.min(window.innerWidth - width - 12, Math.max(12, rect.right - width))}px`;
     menu.style.top = `${Math.min(window.innerHeight - menu.offsetHeight - 12, rect.bottom + 8)}px`;
 
+    const closeMenu = (restoreFocus = false) => {
+      document.removeEventListener('pointerdown', outside);
+      menu.remove();
+      anchor.setAttribute('aria-expanded', 'false');
+      anchor.removeAttribute('aria-controls');
+
+      if (restoreFocus && anchor.isConnected) {
+        anchor.focus({
+          preventScroll: true
+        });
+      }
+    };
     const outside = event => {
-      if (!menu.contains(event.target) && event.target !== anchor) {
-        menu.remove();
-        document.removeEventListener('click', outside);
+      if (!menu.contains(event.target) && !anchor.contains(event.target)) {
+        closeMenu(false);
       }
     };
 
-    window.setTimeout(() => document.addEventListener('click', outside), 0);
+    menu.taskFlowClose = closeMenu;
+    menu.addEventListener('keydown', event => {
+      const items = [...menu.querySelectorAll('[role="menuitem"]:not([disabled])')];
+      const currentIndex = items.indexOf(document.activeElement);
+      let nextIndex = currentIndex;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMenu(true);
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        nextIndex = (currentIndex + 1 + items.length) % items.length;
+      } else if (event.key === 'ArrowUp') {
+        nextIndex = (currentIndex - 1 + items.length) % items.length;
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = items.length - 1;
+      } else {
+        return;
+      }
+
+      event.preventDefault();
+      items[nextIndex]?.focus({
+        preventScroll: true
+      });
+    });
+
+    document.addEventListener('pointerdown', outside);
+    menu.querySelector('[role="menuitem"]')?.focus({
+      preventScroll: true
+    });
     return menu;
   };
 

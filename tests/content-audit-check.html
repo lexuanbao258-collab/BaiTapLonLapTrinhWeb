@@ -151,6 +151,22 @@
                 failures.push(`${route}: nội dung rộng hơn màn hình`);
               }
 
+              const globalSearch = frame.contentDocument.querySelector('#globalSearch');
+              const validSearchSemantics =
+                globalSearch?.getAttribute('name') === 'taskflow_search_query' &&
+                globalSearch.getAttribute('type') === 'search' &&
+                globalSearch.getAttribute('role') === 'searchbox' &&
+                globalSearch.getAttribute('aria-label') === 'Tìm kiếm công việc' &&
+                globalSearch.getAttribute('placeholder') === 'Tìm nhanh công việc...' &&
+                globalSearch.getAttribute('autocomplete') === 'one-time-code' &&
+                globalSearch.getAttribute('autocapitalize') === 'none' &&
+                globalSearch.getAttribute('spellcheck') === 'false' &&
+                globalSearch.getAttribute('enterkeyhint') === 'search';
+
+              if (!validSearchSemantics) {
+                failures.push(`${route}: globalSearch thiếu thuộc tính chống autofill`);
+              }
+
               const pageContent = frame.contentDocument.querySelector('#pageContent');
               const contentStyle = pageContent ?
                 frame.contentWindow.getComputedStyle(pageContent) :
@@ -163,6 +179,23 @@
               if (frame.contentDocument.querySelector('.navigation-curtain')) {
                 failures.push(`${route}: vẫn tạo lớp che khi điều hướng`);
               }
+
+              const profileChip = frame.contentDocument.querySelector('#profileChip');
+              const nestedInteractive = profileChip?.querySelector(
+                'button, a, input, select, textarea'
+              );
+
+              if (
+                profileChip?.tagName !== 'BUTTON' ||
+                profileChip.getAttribute('type') !== 'button' ||
+                profileChip.getAttribute('aria-controls') !== 'profilePopover' ||
+                !profileChip.querySelector('[data-current-user-initials]') ||
+                !profileChip.querySelector('[data-current-user-name]') ||
+                !profileChip.querySelector('.profile-chevron') ||
+                nestedInteractive
+              ) {
+                failures.push(`${route}: cấu trúc profileChip không hợp lệ`);
+              }
             }
 
             await waitForFrame('tasks.html?sort=newest');
@@ -173,7 +206,8 @@
 
             output.textContent = failures.length ?
               `FAIL: ${failures.join(' | ')}` :
-              `PASS: ${publicRoutes.length + privateRoutes.length} trang không có cụm từ cấm trong nội dung, nhãn hoặc gợi ý.`;
+              `PASS: ${publicRoutes.length + privateRoutes.length} trang đạt kiểm tra nội dung; ` +
+                `${privateRoutes.length} trang nội bộ có profileChip và globalSearch hợp lệ.`;
           } catch (error) {
             output.textContent = `FAIL: ${error.message}`;
           } finally {

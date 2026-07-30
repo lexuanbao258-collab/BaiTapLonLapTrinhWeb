@@ -139,12 +139,24 @@ const App = (() => {
       return;
     }
 
+    const currentImage = node.querySelector(':scope > img.avatar-image');
+
+    if (currentImage?.getAttribute('src') === avatarImage) {
+      currentImage.alt = '';
+      currentImage.draggable = false;
+      currentImage.setAttribute('aria-hidden', 'true');
+      node.classList.add('has-avatar-image');
+      return;
+    }
+
     const image = document.createElement('img');
 
     image.className = 'avatar-image';
     image.src = avatarImage;
     image.alt = '';
     image.decoding = 'async';
+    image.draggable = false;
+    image.setAttribute('aria-hidden', 'true');
     image.addEventListener('error', () => {
       if (!node.contains(image)) {
         return;
@@ -347,14 +359,23 @@ const App = (() => {
     togglePopover(popover, button);
   };
 
-  const closeSidebar = () => {
+  const closeSidebar = ({ restoreFocus = false } = {}) => {
     const sidebar = document.querySelector('#sidebar');
     const backdrop = document.querySelector('#sidebarBackdrop');
     const menuButton = document.querySelector('#mobileMenu');
+    const wasOpen = Boolean(sidebar?.classList.contains('open'));
 
     sidebar?.classList.remove('open');
     backdrop?.classList.remove('show');
     menuButton?.setAttribute('aria-expanded', 'false');
+    menuButton?.setAttribute('aria-label', 'Mở menu');
+    document.body.classList.remove('sidebar-open');
+
+    if (restoreFocus && wasOpen) {
+      menuButton?.focus({
+        preventScroll: true
+      });
+    }
   };
 
   const bindSidebar = () => {
@@ -363,6 +384,7 @@ const App = (() => {
     const backdrop = document.querySelector('#sidebarBackdrop');
     const collapseButton = document.querySelector('#sidebarCollapse');
     const menuButton = document.querySelector('#mobileMenu');
+    const mobileQuery = window.matchMedia('(max-width: 760px)');
 
     collapseButton?.addEventListener('click', () => {
       const wasCollapsed = layout.classList.contains('sidebar-collapsed');
@@ -385,12 +407,29 @@ const App = (() => {
       sidebar.classList.toggle('open', shouldOpen);
       backdrop?.classList.toggle('show', shouldOpen);
       menuButton.setAttribute('aria-expanded', String(shouldOpen));
+      menuButton.setAttribute(
+        'aria-label',
+        shouldOpen ? 'Đóng menu' : 'Mở menu'
+      );
+      document.body.classList.toggle('sidebar-open', shouldOpen);
     });
 
-    backdrop?.addEventListener('click', closeSidebar);
+    backdrop?.addEventListener('click', () => closeSidebar());
     sidebar?.querySelectorAll('a').forEach(link => {
-      link.addEventListener('click', closeSidebar);
+      link.addEventListener('click', () => closeSidebar());
     });
+
+    const handleViewportChange = event => {
+      if (!event.matches) {
+        closeSidebar();
+      }
+    };
+
+    if (typeof mobileQuery.addEventListener === 'function') {
+      mobileQuery.addEventListener('change', handleViewportChange);
+    } else {
+      mobileQuery.addListener(handleViewportChange);
+    }
   };
 
   const toggleTheme = () => {
@@ -414,12 +453,127 @@ const App = (() => {
 
   const bindSearch = () => {
     const search = document.querySelector('#globalSearch');
+    const container = document.querySelector('[data-global-search]');
+    const toggleButton = document.querySelector('#globalSearchToggle');
+    const closeButton = document.querySelector('#globalSearchClose');
+    const mobileQuery = window.matchMedia('(max-width: 760px)');
 
-    search?.addEventListener('keydown', event => {
+    if (!search || !container || !toggleButton || !closeButton) {
+      return;
+    }
+
+    const openMobileSearch = () => {
+      if (!mobileQuery.matches) {
+        search.focus({
+          preventScroll: true
+        });
+        return;
+      }
+
+      container.classList.add('mobile-open');
+      toggleButton.setAttribute('aria-expanded', 'true');
+      toggleButton.setAttribute('aria-label', 'Thu gọn tìm kiếm');
+      closeButton.hidden = false;
+      search.focus({
+        preventScroll: true
+      });
+    };
+
+    const closeMobileSearch = (restoreFocus = false) => {
+      if (!container.classList.contains('mobile-open')) {
+        return;
+      }
+
+      container.classList.remove('mobile-open');
+      toggleButton.setAttribute('aria-expanded', 'false');
+      toggleButton.setAttribute('aria-label', 'Mở tìm kiếm');
+      closeButton.hidden = true;
+
+      if (restoreFocus) {
+        toggleButton.focus({
+          preventScroll: true
+        });
+      }
+    };
+
+    const syncSearchMode = () => {
+      if (mobileQuery.matches) {
+        toggleButton.setAttribute(
+          'aria-label',
+          container.classList.contains('mobile-open') ?
+            'Thu gọn tìm kiếm' :
+            'Mở tìm kiếm'
+        );
+        toggleButton.setAttribute(
+          'aria-expanded',
+          String(container.classList.contains('mobile-open'))
+        );
+        closeButton.hidden = !container.classList.contains('mobile-open');
+        return;
+      }
+
+      container.classList.remove('mobile-open');
+      toggleButton.removeAttribute('aria-expanded');
+      toggleButton.setAttribute('aria-label', 'Tập trung vào ô tìm kiếm');
+      closeButton.hidden = true;
+    };
+
+    toggleButton.addEventListener('click', event => {
+      event.preventDefault();
+
+      if (!mobileQuery.matches) {
+        search.focus({
+          preventScroll: true
+        });
+        return;
+      }
+
+      if (container.classList.contains('mobile-open')) {
+        closeMobileSearch(true);
+      } else {
+        openMobileSearch();
+      }
+    });
+
+    closeButton.addEventListener('click', event => {
+      event.preventDefault();
+      closeMobileSearch(true);
+    });
+
+    search.addEventListener('keydown', event => {
       if (event.key === 'Enter' && search.value.trim()) {
         location.href = `tasks.html?q=${encodeURIComponent(search.value.trim())}`;
       }
     });
+
+    document.addEventListener('pointerdown', event => {
+      if (
+        mobileQuery.matches &&
+        container.classList.contains('mobile-open') &&
+        !container.contains(event.target) &&
+        !search.value.trim()
+      ) {
+        closeMobileSearch(false);
+      }
+    });
+
+    document.addEventListener('keydown', event => {
+      if (
+        event.key === 'Escape' &&
+        container.classList.contains('mobile-open')
+      ) {
+        event.preventDefault();
+        closeMobileSearch(true);
+      }
+    });
+
+    if (typeof mobileQuery.addEventListener === 'function') {
+      mobileQuery.addEventListener('change', syncSearchMode);
+    } else {
+      mobileQuery.addListener(syncSearchMode);
+    }
+
+    syncSearchMode();
   };
 
   const bindStaticPopovers = () => {
@@ -430,7 +584,11 @@ const App = (() => {
     const profilePopover = document.querySelector('#profilePopover');
 
     notificationButton?.addEventListener('click', showNotifications);
-    profileButton?.addEventListener('click', showProfileMenu);
+    profileButton?.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      showProfileMenu();
+    });
 
     notificationList?.addEventListener('click', event => {
       const id = event.target
@@ -485,19 +643,23 @@ const App = (() => {
     });
 
     document.addEventListener('click', event => {
-      [
-        [notificationPopover, notificationButton],
-        [profilePopover, profileButton]
-      ].forEach(([popover, trigger]) => {
-        if (
-          popover &&
-          !popover.hidden &&
-          !popover.contains(event.target) &&
-          !trigger?.contains(event.target)
-        ) {
-          hidePopover(popover, trigger);
-        }
-      });
+      if (
+        notificationPopover &&
+        !notificationPopover.hidden &&
+        !notificationPopover.contains(event.target) &&
+        !notificationButton?.contains(event.target)
+      ) {
+        hidePopover(notificationPopover, notificationButton);
+      }
+
+      if (
+        profilePopover &&
+        !profilePopover.hidden &&
+        !profilePopover.contains(event.target) &&
+        !profileButton?.contains(event.target)
+      ) {
+        hidePopover(profilePopover, profileButton);
+      }
     });
   };
 
@@ -507,6 +669,17 @@ const App = (() => {
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        const searchContainer = search?.closest('[data-global-search]');
+        const searchToggle = document.querySelector('#globalSearchToggle');
+
+        if (
+          window.matchMedia('(max-width: 760px)').matches &&
+          searchContainer &&
+          !searchContainer.classList.contains('mobile-open')
+        ) {
+          searchToggle?.click();
+        }
+
         search?.focus();
         search?.select();
       }
@@ -517,8 +690,35 @@ const App = (() => {
       }
 
       if (event.key === 'Escape') {
-        closeSidebar();
+        const sidebar = document.querySelector('#sidebar');
+        const notificationButton = document.querySelector('#notificationBtn');
+        const notificationPopover = document.querySelector('#notificationPopover');
+        const profileButton = document.querySelector('#profileChip');
+        const profilePopover = document.querySelector('#profilePopover');
+        const shouldRestoreSidebarFocus = Boolean(
+          sidebar?.classList.contains('open')
+        );
+        const shouldRestoreProfileFocus = Boolean(
+          profilePopover && !profilePopover.hidden
+        );
+        const shouldRestoreNotificationFocus = Boolean(
+          notificationPopover && !notificationPopover.hidden
+        );
+
+        closeSidebar({
+          restoreFocus: shouldRestoreSidebarFocus
+        });
         closeAllPopovers();
+
+        if (shouldRestoreProfileFocus) {
+          profileButton?.focus({
+            preventScroll: true
+          });
+        } else if (shouldRestoreNotificationFocus) {
+          notificationButton?.focus({
+            preventScroll: true
+          });
+        }
       }
     });
   };
@@ -642,8 +842,7 @@ const App = (() => {
     const legacyMigration = Storage.migrateLegacyDataToActiveUser();
     const legacyCleanup = legacyMigration.ok && !legacyMigration.requiresRecovery ?
       Storage.cleanupLegacyData() : legacyMigration;
-    const isDemoUser = currentUser?.id === 'user_demo' ||
-      currentUser?.email === 'demo@taskflow.local';
+    const isDemoUser = AuthService.isExperienceAccount(currentUser);
     const workspaceReady = isDemoUser ?
       WorkspaceService.seedDemoData() :
       WorkspaceService.ensureUserWorkspace();

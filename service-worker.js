@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'taskflow-v1.7.0';
+const CACHE_NAME = 'taskflow-v1.7.4';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -54,7 +54,8 @@ const STATIC_ASSETS = [
   './assets/js/pages/categories-page.js',
   './assets/js/pages/statistics-page.js',
   './assets/js/pages/settings-page.js',
-  './assets/js/pages/about-page.js'
+  './assets/js/pages/about-page.js',
+  './tests/mobile-interaction-check.html'
 ];
 
 const isCacheable = response => {
