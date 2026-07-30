@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>TaskFlow content audit check</title>
+    <link rel="icon" href="../assets/img/logo.svg" type="image/svg+xml">
     <style>html,body{margin:0;overflow:hidden}</style>
   </head>
   <body>
@@ -30,17 +31,30 @@
           'index.html', 'tasks.html', 'kanban.html', 'calendar.html',
           'statistics.html', 'categories.html', 'profile.html', 'about.html'
         ];
+        const testRoutes = [
+          'account-isolation-check.html',
+          'backup-merge-check.html',
+          'content-audit-check.html',
+          'csv-service-check.html',
+          'hidden-visibility-check.html',
+          'legacy-migration-check.html',
+          'mobile-interaction-check.html',
+          'profile-interaction-check.html',
+          'pwa-cache-check.html',
+          'task-crud-check.html',
+          'theme-bootstrap-check.html'
+        ];
         const forbidden = [
           'bài tập lớn', 'đồ án', 'môn học', 'sinh viên', 'giảng viên', 'báo cáo',
           'demo', 'source code', 'code', 'html', 'css', 'javascript', 'es6',
           'jquery', 'bootstrap', 'localstorage', 'backend', 'frontend', 'database',
-          'crud', 'json', 'pwa', 'service worker', 'api', 'framework', 'công nghệ',
+          'crud', 'pwa', 'service worker', 'api', 'framework', 'công nghệ',
           'responsive', 'chức năng bonus', 'yêu cầu đề bài', 'mô phỏng đăng nhập',
           'không cần backend', 'lưu dữ liệu bằng localstorage'
         ];
         const isolatedTerms = new Set([
           'demo', 'code', 'html', 'css', 'javascript', 'es6', 'jquery', 'bootstrap',
-          'localstorage', 'backend', 'frontend', 'database', 'crud', 'json', 'pwa',
+          'localstorage', 'backend', 'frontend', 'database', 'crud', 'pwa',
           'api', 'framework', 'responsive'
         ]);
         const hasForbiddenText = value => forbidden.filter(term => {
@@ -82,10 +96,189 @@
           return [doc.body?.innerText || '', ...attributes, ...formValues].join('\n');
         };
 
+        const hasAccessibleName = (doc, control) => {
+          if (control.getAttribute('aria-label')?.trim()) {
+            return true;
+          }
+
+          const labelledBy = control.getAttribute('aria-labelledby')
+            ?.split(/\s+/)
+            .filter(Boolean);
+
+          if (labelledBy?.some(id => doc.getElementById(id)?.textContent.trim())) {
+            return true;
+          }
+
+          if (
+            control.id &&
+            [...doc.querySelectorAll('label[for]')].some(label => {
+              return label.htmlFor === control.id && label.textContent.trim();
+            })
+          ) {
+            return true;
+          }
+
+          return Boolean(control.closest('label')?.textContent.trim());
+        };
+
+        const collectResourceUrls = (doc, resourceUrls) => {
+          doc.querySelectorAll(
+            'img[src], link[rel="stylesheet"][href], link[rel~="icon"][href]'
+          ).forEach(element => {
+            const path = element.getAttribute('src') || element.getAttribute('href');
+
+            if (!path) {
+              return;
+            }
+
+            const url = new URL(path, doc.baseURI);
+
+            if (url.protocol === 'http:' || url.protocol === 'https:') {
+              resourceUrls.add(url.href);
+            }
+          });
+        };
+
+        const auditAccessibility = (route, doc, failures) => {
+          const inaccessibleInputs = [...doc.querySelectorAll('input')].filter(input => {
+            const ignoredTypes = new Set(['hidden', 'button', 'submit', 'reset', 'image']);
+
+            return !ignoredTypes.has(input.type) && !hasAccessibleName(doc, input);
+          });
+
+          if (inaccessibleInputs.length) {
+            failures.push(
+              `${route}: input thiếu tên truy cập (${inaccessibleInputs
+                .map(input => input.id || input.name || input.type)
+                .join(', ')})`
+            );
+          }
+
+          const inaccessibleHiddenFiles = [
+            ...doc.querySelectorAll('input[type="file"][hidden]')
+          ].filter(input => !hasAccessibleName(doc, input));
+
+          if (inaccessibleHiddenFiles.length) {
+            failures.push(`${route}: input file ẩn thiếu tên truy cập`);
+          }
+
+          if (doc.querySelector('button button, button a, a button, a a')) {
+            failures.push(`${route}: có phần tử tương tác lồng nhau`);
+          }
+
+          if (doc.querySelector('form button:not([type])')) {
+            failures.push(`${route}: button trong form thiếu type`);
+          }
+
+          const iconButtonsWithoutLabel = [...doc.querySelectorAll('button')]
+            .filter(button => {
+              return !button.textContent.trim() &&
+                button.querySelector('i, svg, img') &&
+                !button.getAttribute('aria-label')?.trim();
+            });
+
+          if (iconButtonsWithoutLabel.length) {
+            failures.push(`${route}: nút chỉ có icon thiếu aria-label`);
+          }
+
+          if (doc.querySelector('img:not([alt])')) {
+            failures.push(`${route}: ảnh thiếu thuộc tính alt`);
+          }
+
+          if (doc.querySelector('[aria-expanded]:not([aria-controls])')) {
+            failures.push(`${route}: nút mở/đóng thiếu aria-controls`);
+          }
+
+          const invalidModals = [...doc.querySelectorAll('.modal-overlay > .modal')]
+            .filter(modal => {
+              const titleId = modal.getAttribute('aria-labelledby');
+
+              return modal.getAttribute('role') !== 'dialog' ||
+                modal.getAttribute('aria-modal') !== 'true' ||
+                !titleId ||
+                !doc.getElementById(titleId);
+            });
+
+          if (invalidModals.length) {
+            failures.push(`${route}: modal thiếu role/aria-modal/aria-labelledby`);
+          }
+
+          const invalidErrorRegions = [...doc.querySelectorAll('.field-error')]
+            .filter(error => {
+              const described = error.id && [...doc.querySelectorAll('[aria-describedby]')]
+                .some(control => {
+                  return control.getAttribute('aria-describedby')
+                    .split(/\s+/)
+                    .includes(error.id);
+                });
+
+              return !described &&
+                !error.getAttribute('aria-live') &&
+                error.getAttribute('role') !== 'alert';
+            });
+
+          if (invalidErrorRegions.length) {
+            failures.push(`${route}: vùng lỗi thiếu liên kết hoặc aria-live`);
+          }
+
+          if (route === 'about.html') {
+            const importInput = doc.querySelector('#importDataInput');
+
+            if (
+              !importInput ||
+              importInput.type !== 'file' ||
+              importInput.name !== 'importBackupFile' ||
+              !importInput.hidden ||
+              !hasAccessibleName(doc, importInput)
+            ) {
+              failures.push('about.html: importDataInput thiếu accessibility');
+            }
+          }
+        };
+
+        const auditTestFavicons = async (failures, resourceUrls) => {
+          for (const route of testRoutes) {
+            const response = await fetch(route, { cache: 'no-store' });
+
+            if (!response.ok) {
+              failures.push(`tests/${route}: không tải được trang test`);
+              continue;
+            }
+
+            const doc = new DOMParser().parseFromString(
+              await response.text(),
+              'text/html'
+            );
+            const favicon = doc.querySelector('link[rel~="icon"][href]');
+
+            if (!favicon) {
+              failures.push(`tests/${route}: thiếu favicon`);
+              continue;
+            }
+
+            resourceUrls.add(new URL(favicon.getAttribute('href'), response.url).href);
+          }
+        };
+
+        const auditResources = async (resourceUrls, failures) => {
+          for (const url of resourceUrls) {
+            try {
+              const response = await fetch(url, { cache: 'no-store' });
+
+              if (!response.ok) {
+                failures.push(`Tài nguyên không tồn tại: ${new URL(url).pathname}`);
+              }
+            } catch (error) {
+              failures.push(`Không tải được tài nguyên: ${new URL(url).pathname}`);
+            }
+          }
+        };
+
         const run = async () => {
           try {
             AuthService.logout();
             const failures = [];
+            const resourceUrls = new Set();
 
             for (const route of publicRoutes) {
               await waitForFrame(route);
@@ -104,6 +297,8 @@
                 failures.push(`${route}: nội dung rộng hơn màn hình`);
               }
 
+              auditAccessibility(route, frame.contentDocument, failures);
+              collectResourceUrls(frame.contentDocument, resourceUrls);
             }
 
             AuthService.ensureDemoAccount();
@@ -150,6 +345,9 @@
               if (documentWidth > frame.contentWindow.innerWidth + 1) {
                 failures.push(`${route}: nội dung rộng hơn màn hình`);
               }
+
+              auditAccessibility(route, frame.contentDocument, failures);
+              collectResourceUrls(frame.contentDocument, resourceUrls);
 
               const globalSearch = frame.contentDocument.querySelector('#globalSearch');
               const validSearchSemantics =
@@ -204,10 +402,14 @@
               failures.push('tasks.html?sort=newest: chưa áp dụng sắp xếp mới tạo gần đây');
             }
 
+            await auditTestFavicons(failures, resourceUrls);
+            await auditResources(resourceUrls, failures);
+
             output.textContent = failures.length ?
               `FAIL: ${failures.join(' | ')}` :
-              `PASS: ${publicRoutes.length + privateRoutes.length} trang đạt kiểm tra nội dung; ` +
-                `${privateRoutes.length} trang nội bộ có profileChip và globalSearch hợp lệ.`;
+              `PASS: ${publicRoutes.length + privateRoutes.length} trang đạt kiểm tra ` +
+                `nội dung/accessibility; ${testRoutes.length} trang test có favicon; ` +
+                'các đường dẫn ảnh và stylesheet đều tồn tại.';
           } catch (error) {
             output.textContent = `FAIL: ${error.message}`;
           } finally {

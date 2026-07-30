@@ -412,7 +412,7 @@ const SettingsPage = (() => {
         refresh();
       }
     } catch (error) {
-      console.error('Không thể khôi phục dữ liệu:', error);
+      console.warn('Tệp sao lưu bị từ chối:', error?.message || error);
       Toast.show(error?.message || 'Không thể khôi phục từ tệp sao lưu.', 'error', 4800);
     } finally {
       input.value = '';

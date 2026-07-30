@@ -108,7 +108,8 @@ const TaskCard = (() => {
             </button>
             <button class="icon-btn" type="button" data-action="more" title="Tác vụ"
               aria-label="Mở menu tác vụ công việc"
-              aria-haspopup="menu" aria-expanded="false">
+              aria-haspopup="menu" aria-controls="taskContextMenu"
+              aria-expanded="false">
               ${Icons.render('more', 19)}
             </button>
           </div>
@@ -172,7 +173,8 @@ const TaskCard = (() => {
           </button>
           <button class="icon-btn" type="button" data-action="more"
             aria-label="Mở menu tác vụ công việc"
-            aria-haspopup="menu" aria-expanded="false">
+            aria-haspopup="menu" aria-controls="taskContextMenu"
+            aria-expanded="false">
             ${Icons.render('more', 19)}
           </button>
         </div>
@@ -252,7 +254,6 @@ const TaskCard = (() => {
       document.removeEventListener('pointerdown', outside);
       menu.remove();
       anchor.setAttribute('aria-expanded', 'false');
-      anchor.removeAttribute('aria-controls');
 
       if (restoreFocus && anchor.isConnected) {
         anchor.focus({
